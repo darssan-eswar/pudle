@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://pulzar-road-intelligence.sites.openai.com'),
+  metadataBase: new URL('https://pulzar-road-intelligence.ledarssan919276.chatgpt.site'),
   title: 'Pulzar — Road Intelligence',
   description: 'Privacy-first, real-time road intelligence powered by drivers already on the road.',
   openGraph: {
