@@ -18,6 +18,7 @@ export type RecordingErrorCode =
   | 'invalid-state'
   | 'storage-quota'
   | 'storage-failed'
+  | 'invalid-owner'
   | 'invalid-file'
   | 'file-too-large';
 

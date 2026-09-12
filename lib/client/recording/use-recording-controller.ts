@@ -1,15 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RecordingAccountSession } from './account-session';
 import { acquireRearCamera, type CameraSession } from './camera';
 import {
   BrowserRecorder,
   type CompletedRecording,
 } from './recorder';
-import {
-  PrivateRecordingStorage,
-  type RecordingStorageOptions,
-} from './storage';
 import {
   RecordingError,
   type RecordingCallbacks,
@@ -19,8 +16,7 @@ import {
 } from './types';
 
 export interface UseRecordingControllerOptions extends RecordingCallbacks {
-  storage?: PrivateRecordingStorage;
-  storageOptions?: RecordingStorageOptions;
+  account: RecordingAccountSession;
 }
 
 export interface RecordingControllerApi {
@@ -34,6 +30,8 @@ export interface RecordingControllerApi {
   pause(): void;
   resume(): void;
   stop(): Promise<void>;
+  dispose(): void;
+  reset(): void;
   clearError(): void;
 }
 
@@ -46,7 +44,7 @@ function normalizeError(error: unknown): RecordingError {
 }
 
 export function useRecordingController(
-  options: UseRecordingControllerOptions = {},
+  options: UseRecordingControllerOptions,
 ): RecordingControllerApi {
   const [state, setState] = useState<RecordingState>('idle');
   const [stream, setStream] = useState<MediaStream>();
@@ -55,7 +53,6 @@ export function useRecordingController(
   const mounted = useRef(true);
   const session = useRef<CameraSession | undefined>(undefined);
   const recorder = useRef<BrowserRecorder | undefined>(undefined);
-  const storage = useRef<PrivateRecordingStorage | undefined>(undefined);
   const callbacks = useRef<RecordingCallbacks>(options);
 
   useEffect(() => {
@@ -102,15 +99,9 @@ export function useRecordingController(
     [emit],
   );
 
-  const getStorage = useCallback(() => {
-    storage.current ??=
-      options.storage ?? new PrivateRecordingStorage(options.storageOptions);
-    return storage.current;
-  }, [options.storage, options.storageOptions]);
-
   const saveCompleted = useCallback(
     async (completed: CompletedRecording) => {
-      const result = await getStorage().save({
+      const result = await options.account.storage.save({
         blob: completed.blob,
         durationMs: completed.durationMs,
       });
@@ -121,7 +112,7 @@ export function useRecordingController(
         notifyMetadata({ action: 'deleted', id });
       }
     },
-    [emit, getStorage, notifyMetadata],
+    [emit, notifyMetadata, options.account],
   );
 
   const handleInterruption = useCallback(async () => {
@@ -185,6 +176,21 @@ export function useRecordingController(
     updateState('idle');
   }, [updateState]);
 
+  const disposeCapture = useCallback(() => {
+    recorder.current?.dispose();
+    recorder.current = undefined;
+    session.current?.stop();
+    session.current = undefined;
+  }, []);
+
+  const dispose = useCallback(() => {
+    options.account.dispose();
+    setStream(undefined);
+    setElapsedMs(0);
+    setError(undefined);
+    updateState('idle');
+  }, [options.account, updateState]);
+
   const start = useCallback(() => {
     setError(undefined);
     setElapsedMs(0);
@@ -231,15 +237,13 @@ export function useRecordingController(
 
   useEffect(() => {
     mounted.current = true;
+    const unregister = options.account.registerCleanup(disposeCapture);
     return () => {
       mounted.current = false;
-      recorder.current?.dispose();
-      session.current?.stop();
-      if (!options.storage) {
-        storage.current?.close();
-      }
+      unregister();
+      disposeCapture();
     };
-  }, [options.storage]);
+  }, [disposeCapture, options.account]);
 
   return {
     state,
@@ -252,6 +256,8 @@ export function useRecordingController(
     pause,
     resume,
     stop,
+    dispose,
+    reset: dispose,
     clearError: () => setError(undefined),
   };
 }

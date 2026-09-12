@@ -19,6 +19,19 @@ function formatElapsed(elapsedMs: number): string {
 }
 
 export function RecordingController({
+  account,
+  ...props
+}: RecordingControllerProps) {
+  return (
+    <RecordingControllerView
+      key={account.ownerId}
+      account={account}
+      {...props}
+    />
+  );
+}
+
+function RecordingControllerView({
   className,
   ...options
 }: RecordingControllerProps) {

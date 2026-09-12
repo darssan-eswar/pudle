@@ -7,9 +7,12 @@ function createStorage(
   indexedDB: IDBFactory,
   now: () => number,
   maxItems = 2,
+  ownerId = 'server-user-test',
+  databaseName = `recordings-${crypto.randomUUID()}`,
 ) {
   return new PrivateRecordingStorage({
-    databaseName: `recordings-${crypto.randomUUID()}`,
+    ownerId,
+    databaseName,
     indexedDB,
     now,
     retention: {
@@ -94,5 +97,53 @@ describe('PrivateRecordingStorage', () => {
     expect(await storage.cleanup()).toEqual(['expired']);
     expect(await storage.load('expired')).toBeUndefined();
     storage.close();
+  });
+
+  it('isolates clips across same-browser account changes', async () => {
+    const indexedDB = new IDBFactory();
+    const databaseName = `account-isolation-${crypto.randomUUID()}`;
+    const accountA = createStorage(
+      indexedDB,
+      () => 100,
+      5,
+      'stable-server-user-a',
+      databaseName,
+    );
+    await accountA.save({
+      id: 'account-a-clip',
+      blob: new Blob(['account a'], { type: 'video/mp4' }),
+      durationMs: 1,
+    });
+    accountA.dispose();
+
+    const accountB = createStorage(
+      indexedDB,
+      () => 200,
+      5,
+      'stable-server-user-b',
+      databaseName,
+    );
+    expect(await accountB.list()).toEqual([]);
+    await accountB.save({
+      id: 'account-b-clip',
+      blob: new Blob(['account b'], { type: 'video/mp4' }),
+      durationMs: 1,
+    });
+    expect((await accountB.list()).map(({ id }) => id)).toEqual([
+      'account-b-clip',
+    ]);
+    accountB.dispose();
+
+    const signedBackInAccountA = createStorage(
+      indexedDB,
+      () => 300,
+      5,
+      'stable-server-user-a',
+      databaseName,
+    );
+    expect((await signedBackInAccountA.list()).map(({ id }) => id)).toEqual([
+      'account-a-clip',
+    ]);
+    signedBackInAccountA.dispose();
   });
 });
