@@ -18,25 +18,3 @@ export function getD1() {
   }
   return env.DB;
 }
-
-let initialized = false;
-
-export async function ensureDatabase() {
-  if (initialized) return;
-  const d1 = getD1();
-  await d1.batch([
-    d1.prepare(`CREATE TABLE IF NOT EXISTS road_events (
-      id TEXT PRIMARY KEY NOT NULL,
-      type TEXT NOT NULL,
-      latitude REAL NOT NULL,
-      longitude REAL NOT NULL,
-      confidence REAL NOT NULL DEFAULT 1,
-      source TEXT NOT NULL DEFAULT 'manual',
-      created_at INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL
-    )`),
-    d1.prepare('CREATE INDEX IF NOT EXISTS idx_road_events_expires_at ON road_events (expires_at)'),
-    d1.prepare('CREATE INDEX IF NOT EXISTS idx_road_events_location ON road_events (latitude, longitude)'),
-  ]);
-  initialized = true;
-}

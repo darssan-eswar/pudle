@@ -13,15 +13,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://pulzar-road-intelligence.ledarssan919276.chatgpt.site'),
-  title: 'Pulzar — Road Intelligence',
-  description: 'Privacy-first road alerts with local camera processing and no video uploads.',
-  applicationName: 'Pulzar',
+  metadataBase: new URL('https://pudle-road-intelligence.ledarssan919276.chatgpt.site'),
+  title: 'Pudle — Peer Updated Driving Logic Engine',
+  description: 'Privacy-first road alerts with local capture and optional disclosed cloud analysis.',
+  applicationName: 'Pudle',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Pulzar',
+    title: 'Pudle',
   },
   formatDetection: {
     telephone: false,
@@ -31,13 +31,13 @@ export const metadata: Metadata = {
     apple: '/apple-touch-icon.png',
   },
   openGraph: {
-    title: 'Pulzar — Road Intelligence',
+    title: 'Pudle — Peer Updated Driving Logic Engine',
     description: 'Turn any phone into a privacy-first road-intelligence node.',
-    images: [{ url: '/og.png', width: 1730, height: 909, alt: 'Pulzar privacy-first road intelligence network' }],
+    images: [{ url: '/og.png', width: 1730, height: 909, alt: 'Pudle privacy-first road intelligence network' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Pulzar — Road Intelligence',
+    title: 'Pudle — Peer Updated Driving Logic Engine',
     description: 'Turn any phone into a privacy-first road-intelligence node.',
     images: ['/og.png'],
   },

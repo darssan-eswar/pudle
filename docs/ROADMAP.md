@@ -1,8 +1,8 @@
-# Pulzar product plan
+# Pudle product plan
 
 ## Product definition
 
-**One-liner:** Pulzar is the private nervous system for smart cities.
+**One-liner:** Pudle is a privacy-first peer-updated driving logic engine.
 
 **Initial wedge:** A phone-based smart dashcam that converts live road video into anonymous, short-lived road-event metadata and shares it with drivers within two miles.
 
@@ -16,7 +16,7 @@ The demo must prove the full loop, not every future feature:
 2. Show objects being detected locally with bounding boxes.
 3. Submit an observable road event.
 4. Show it appearing in the live two-mile feed.
-5. Ask Pulzar what is ahead and hear a spoken answer.
+5. Ask Pudy what is ahead and hear a spoken answer.
 6. Explain that raw video is never uploaded and the report expires in 30 minutes.
 
 ## Stage 2 — Credible intelligence
@@ -29,7 +29,7 @@ The demo must prove the full loop, not every future feature:
 - Traffic-light learning: estimate queue length and observed phase duration; label timing as probabilistic rather than authoritative.
 - Offline queue: hold signed metadata when connectivity drops and forward it through HTTPS or LoRaWAN when available.
 
-## Stage 3 — Pulzar network
+## Stage 3 — Pudle network
 
 - Gateway bridge translating the web event envelope to compact LoRaWAN payloads.
 - Flood, levee, road-temperature, and infrastructure sensor ingestion.
@@ -46,7 +46,7 @@ The product should report “reckless driving,” “weaving,” “hard braking
 
 ### Parking should be passively collected, actively queried
 
-The best experience is hybrid: opted-in devices detect likely curb availability during ordinary driving, but Pulzar only surfaces aggregated, fresh availability when somebody asks for parking. This creates useful coverage without rerouting contributors or retaining a trace of parked cars.
+The best experience is hybrid: opted-in devices detect likely curb availability during ordinary driving, but Pudle only surfaces aggregated, fresh availability when somebody asks for parking. This creates useful coverage without rerouting contributors or retaining a trace of parked cars.
 
 ### LoRaWAN is the transport moat, not the first demo dependency
 
@@ -63,4 +63,4 @@ The web MVP should prove the event protocol and demand. A gateway bridge can the
 
 Suggested submission description:
 
-> Pulzar turns any phone into a privacy-first road-intelligence node. Its camera detects road objects locally, shares only anonymous and expiring metadata, and alerts drivers within two miles through a live database-backed feed and voice interface. I built the MVP with React, TypeScript, TensorFlow.js, Cloudflare D1, and GitHub Copilot Pro+, with a metadata protocol designed to bridge into Pulzar's LoRaWAN gateway network.
+> Pudle turns any phone into a privacy-first road-intelligence node. Its camera supports local detection, while future periodic compressed-frame cloud analysis remains independently controlled, explicitly disclosed, and opt-in. Pudle shares expiring metadata and alerts drivers within two miles through a database-backed feed. The MVP uses React, TypeScript, TensorFlow.js, Cloudflare D1, and GitHub Copilot, with LoRaWAN remaining roadmap-only.

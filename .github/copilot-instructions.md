@@ -1,8 +1,8 @@
-# Pulzar Copilot instructions
+# Pudle Copilot instructions
 
-Pulzar is a privacy-first road-intelligence product. Preserve these invariants in every generated change:
+Pudle (Peer Updated Driving Logic Engine) is a privacy-first road-intelligence product with the Pudy voice companion. Preserve these invariants in every generated change:
 
-- Camera frames and raw audio never leave the browser.
+- Full recordings and raw audio never leave the browser. Periodic compressed frames may leave only after a separate explicit cloud-analysis opt-in with clear disclosure and independently controlled recording/cloud settings.
 - Do not add license-plate recognition, facial recognition, vehicle-owner identification, or persistent device tracking.
 - Round report coordinates to three decimal places before network transmission.
 - Nearby road events must be limited to a two-mile radius and expire after 30 minutes.
@@ -25,7 +25,7 @@ Prefer small composable functions, explicit TypeScript types, and progressive en
 - `public/`: installable-site and social assets.
 - `docs/ROADMAP.md`: staged product scope; roadmap items are not implemented behavior.
 
-The runtime is Vinext with React and TypeScript. Cloudflare D1 stores only short-lived road-event metadata. TensorFlow.js and COCO-SSD run in the browser.
+The runtime is Vinext with React and TypeScript. Cloudflare D1 stores account and short-lived product metadata, never recording media. TensorFlow.js and COCO-SSD run in the browser; optional cloud analysis is a later slice.
 
 ## Development and database workflow
 
@@ -46,11 +46,11 @@ Run the narrowest relevant checks while iterating, then run all available reposi
 ```bash
 npm run lint
 npm run typecheck
-npm run test --if-present
+npm test
 npm run build
 ```
 
-There is currently no automated test script. Changes that introduce testable logic or alter behavior should add focused tests and a `test` script rather than relying only on manual verification.
+Add focused tests for testable logic and behavior changes rather than relying only on manual verification.
 
 ## Definition of done
 

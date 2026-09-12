@@ -8,6 +8,13 @@
       "when": 1788299344120,
       "tag": "0000_woozy_paladin",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789184777948,
+      "tag": "0001_sad_ares",
+      "breakpoints": true
     }
   ]
 }

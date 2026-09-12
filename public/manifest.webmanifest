@@ -1,6 +1,6 @@
 {
-  "name": "Pulzar Road Intelligence",
-  "short_name": "Pulzar",
+  "name": "Pudle — Peer Updated Driving Logic Engine",
+  "short_name": "Pudle",
   "description": "Privacy-first local road alerts for drivers.",
   "start_url": "/",
   "display": "standalone",

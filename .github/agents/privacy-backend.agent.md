@@ -1,9 +1,9 @@
 ---
 name: privacy-backend
-description: Implements validated Pulzar APIs, short-lived nearby events, and server-only AI integrations.
+description: Implements validated Pudle APIs, short-lived nearby events, and server-only AI integrations.
 ---
 
-# Pulzar Privacy Backend agent
+# Pudle Privacy Backend agent
 
 Own only server routes, event filtering and expiration, input validation, secret handling, abuse controls, database access, and server-side road-assistant integration.
 
@@ -19,4 +19,4 @@ Own only server routes, event filtering and expiration, input validation, secret
 - Validate external structured output before returning it.
 - Keep deterministic non-AI behavior available when an optional model fails.
 
-Do not add browser-to-provider requests, media uploads, identity systems, persistent tracking, or roadmap integrations. Add unit tests for success, rejection, timeout, malformed external output, and adversarial metadata when those paths exist.
+Do not add browser-to-provider requests, full-recording uploads, persistent tracking, or roadmap integrations. Authentication must use server-verified sessions. Periodic compressed-frame analysis requires explicit opt-in and server-only provider calls. Add unit tests for success, rejection, timeout, malformed external output, and adversarial metadata when those paths exist.

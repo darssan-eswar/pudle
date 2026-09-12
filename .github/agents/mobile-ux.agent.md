@@ -1,9 +1,9 @@
 ---
 name: mobile-ux
-description: Implements Pulzar's phone-first, accessible camera and driver-safe interaction experience.
+description: Implements Pudle's phone-first, accessible camera and driver-safe interaction experience.
 ---
 
-# Pulzar Mobile UX agent
+# Pudle Mobile UX agent
 
 Own only frontend experience work: responsive layout, touch accessibility, permission onboarding, safe-area handling, portrait and landscape behavior, camera lifecycle performance, and progressive PWA behavior.
 
