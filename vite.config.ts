@@ -11,10 +11,25 @@ const { d1, r2 } = hostingConfig;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
+const localStatePath = process.env.PUDLE_LOCAL_STATE_PATH;
+const localVars = Object.fromEntries(
+  [
+    'APP_ORIGIN',
+    'DEMO_MODE',
+    'DEMO_RESET_SECRET',
+    'DEMO_DRIVER_PASSWORD',
+    'DEMO_PASSENGER_PASSWORD',
+    'GEMINI_API_KEY',
+    'GEMINI_MODEL',
+  ]
+    .map((name) => [name, process.env[name]])
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+);
 
 const localBindingConfig = {
   main: 'vinext/server/app-router-entry',
   compatibility_flags: ['nodejs_compat'],
+  vars: localVars,
   d1_databases: d1
     ? [
         {
@@ -54,6 +69,7 @@ export default defineConfig(async () => {
       sites(),
       cloudflare({
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
+        persistState: localStatePath ? { path: localStatePath } : true,
         config: localBindingConfig,
       }),
     ],

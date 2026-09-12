@@ -12,6 +12,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply site-creator-d1 --config wrangler.local.jsonc --local",
     "test": "npm run test:server && npm run test:client",
     "test:server": "tsx --test tests/**/*.test.ts",
     "test:client": "vitest run"
@@ -20,7 +21,7 @@
     "@tensorflow-models/coco-ssd": "^2.2.3",
     "@tensorflow/tfjs": "^4.22.0",
     "drizzle-orm": "0.45.2",
-    "next": "16.2.6",
+    "next": "16.3.5",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },

@@ -37,13 +37,40 @@ npm run dev
 
 Configure the Cloudflare D1 binding as `DB`. Copy `.env.example` values into the runtime’s server environment; never expose them through client-prefixed variables.
 
+### Fresh isolated local demo
+
+Use a new ignored persistence directory so existing local or remote data is never reset:
+
+```bash
+export PUDLE_LOCAL_STATE_PATH="$PWD/.pudle-local/demo-$(date +%Y%m%d-%H%M%S)"
+export APP_ORIGIN=http://localhost:4173
+export DEMO_MODE=true
+export DEMO_RESET_SECRET='choose-a-local-reset-secret'
+export DEMO_DRIVER_PASSWORD='choose-a-driver-password'
+export DEMO_PASSENGER_PASSWORD='choose-a-passenger-password'
+
+npm run db:migrate:local -- --persist-to "$PUDLE_LOCAL_STATE_PATH"
+npm run dev -- --host 127.0.0.1 --port 4173
+```
+
+In another terminal, seed two normal accounts through the same authenticated application stack:
+
+```bash
+curl --fail-with-body -X POST http://localhost:4173/api/demo/reset \
+  -H 'Origin: http://localhost:4173' \
+  -H 'X-Pudle-CSRF: 1' \
+  -H "X-Demo-Reset-Secret: $DEMO_RESET_SECRET"
+```
+
+This creates `driver@demo.pudle.local` and `passenger@demo.pudle.local` with the two configured passwords. The reset route exists only when `DEMO_MODE=true`; it is rate-limited and uses normal password hashing and server sessions. Do not point these commands at a shared state directory or add `--remote`.
+
 `GEMINI_API_KEY` is optional and server-only. With no key, `GET /api/analysis/status` reports `configured: false` and analysis returns `provider_unconfigured`; it never presents a fixture as live output. `GEMINI_MODEL` defaults to `gemini-3.8-flash`. Live provider verification remains blocked until a valid key and applicable provider account are supplied.
 
 Apply generated migrations using the deployment environment’s Wrangler/D1 workflow. The schema source of truth is `db/schema.ts`; after changing it:
 
 ```bash
 npm run db:generate
-npx wrangler d1 migrations apply <DATABASE_NAME> --local
+npm run db:migrate:local -- --persist-to <ISOLATED_STATE_DIRECTORY>
 npx wrangler d1 migrations apply <DATABASE_NAME> --remote
 ```
 
