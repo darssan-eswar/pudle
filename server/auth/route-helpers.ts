@@ -16,12 +16,14 @@ export async function runAuthMutation(
     requireMutationOrigin(request, context.configuredOrigin);
     const body = await readJsonObject(request);
     const result = await handler(body);
-    return json({ user: result.user }, successStatus, { 'Set-Cookie': sessionCookie(result.token) });
+    return json({ user: result.user }, successStatus, {
+      'Set-Cookie': sessionCookie(result.token, request),
+    });
   } catch (error) {
     return errorResponse(error);
   }
 }
 
-export function signedOutResponse() {
-  return json({ signedOut: true }, 200, { 'Set-Cookie': clearSessionCookie() });
+export function signedOutResponse(request?: Request) {
+  return json({ signedOut: true }, 200, { 'Set-Cookie': clearSessionCookie(request) });
 }

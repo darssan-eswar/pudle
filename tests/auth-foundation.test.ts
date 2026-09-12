@@ -12,6 +12,7 @@ import { HttpError, readJsonObject } from '../server/http';
 import { authorizeDemoReset } from '../server/demo';
 import { requireMutationOrigin, sha256 } from '../server/security';
 import { signedOutResponse } from '../server/auth/route-helpers';
+import { clearSessionCookie, sessionCookie } from '../server/auth/cookies';
 
 class MemoryAuthStore implements AuthStore {
   users = new Map<string, UserRecord>();
@@ -190,6 +191,20 @@ test('signin rotates sessions and signout invalidates the current token', async 
   await auth.signOut(signin.token);
   assert.equal(await auth.currentUser(signin.token), null);
   assert.match(signedOutResponse().headers.get('set-cookie') ?? '', /Max-Age=0/);
+});
+
+test('session cookies are usable on loopback HTTP and remain secure elsewhere', () => {
+  const localhost = new Request('http://localhost:4173/api/auth/signin');
+  const loopback = new Request('http://127.0.0.1:4173/api/auth/signin');
+  const production = new Request('https://pudle.example/api/auth/signin');
+  const insecureRemote = new Request('http://pudle.example/api/auth/signin');
+
+  assert.match(sessionCookie('token', localhost), /^pudle_session_local=token;/);
+  assert.doesNotMatch(sessionCookie('token', localhost), /;\s*Secure/);
+  assert.doesNotMatch(clearSessionCookie(loopback), /;\s*Secure/);
+  assert.match(sessionCookie('token', production), /^__Host-pudle_session=token;/);
+  assert.match(sessionCookie('token', production), /;\s*Secure/);
+  assert.match(clearSessionCookie(insecureRemote), /;\s*Secure/);
 });
 
 test('failed atomic rotation preserves the previous session', async () => {

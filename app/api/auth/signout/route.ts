@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     const { auth, env } = getAuthRuntime();
     requireMutationOrigin(request, env.APP_ORIGIN);
     await auth.signOut(readSessionCookie(request));
-    return signedOutResponse();
+    return signedOutResponse(request);
   } catch (error) {
     return errorResponse(error);
   }

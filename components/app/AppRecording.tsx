@@ -473,9 +473,9 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
             </div>
             <p>
               {cloud.status === 'unconfigured'
-                ? `${cloud.message} If enabled in the future, compressed frames would be sent to a disclosed provider subject to its retention policy.`
+                ? `${cloud.message} If configured later, only explicitly consented periodic compressed frames would be sent to the disclosed provider subject to its retention policy.`
                 : cloud.status === 'available'
-                  ? `${cloud.provider} / ${cloud.model} is available, but this app does not sample or upload frames.`
+                  ? `${cloud.provider} / ${cloud.model} is available. Cloud analysis stays off until you consent and enable periodic compressed-frame uploads.`
                 : cloud.status === 'ready'
                   ? cloud.result.summary
                   : 'message' in cloud
