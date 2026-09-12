@@ -12,7 +12,7 @@ Deliver a recording-ready, mobile-first Pudle demo with real authenticated persi
    - Generate and review D1 migrations.
    - Add a demo-only seed/reset workflow and two real demo accounts.
 
-2. **Private capture and opt-in cloud analysis**
+2. **Private capture and opt-in cloud analysis** (backend complete; client capture remains)
    - Record the rear camera with supported MIME negotiation.
    - Save private media in browser storage with playback, export, and deletion.
    - Persist only recording metadata server-side.
@@ -40,8 +40,8 @@ Deliver a recording-ready, mobile-first Pudle demo with real authenticated persi
 - [ ] Two browser sessions have distinct stable server-side identities and isolated private data.
 - [ ] Local recording supports start, elapsed time, stop, save, playback, export, deletion, interruption, and permission failure.
 - [ ] Full recordings are never uploaded implicitly.
-- [ ] Cloud analysis is separately enabled with disclosure and analyzes only periodic compressed frames.
-- [ ] Analysis results show source, timestamp, confidence, uncertainty, and honest failure/unconfigured states.
+- [x] Cloud analysis backend is separately enabled with disclosure and analyzes only bounded compressed frames; client sampling remains.
+- [x] Analysis API results include source, timestamp, confidence, uncertainty, and honest failure/unconfigured states.
 - [ ] Events persist, reach another nearby user within five seconds, expire after 30 minutes, and support authorized acknowledge/resolve actions.
 - [ ] Invite-only ride messages persist, poll without duplication, and remain member-only.
 - [ ] Foreground “Hey Pudy” produces visible listening/thinking/speaking states and grounded concise answers.

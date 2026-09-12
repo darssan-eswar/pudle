@@ -22,6 +22,20 @@
       "when": 1789185379415,
       "tag": "0002_fix-road-event-user-fk",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789185646978,
+      "tag": "0003_windy_the_professor",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789185851979,
+      "tag": "0004_boring_spyke",
+      "breakpoints": true
     }
   ]
 }
