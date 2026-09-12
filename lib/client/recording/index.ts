@@ -1,3 +1,4 @@
+export * from './account-session';
 export * from './camera';
 export * from './mime';
 export * from './recorder';

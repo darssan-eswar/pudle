@@ -1,18 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
-  PrivateRecordingStorage,
   RecordingError,
+  type RecordingAccountSession,
   type RecordingCallbacks,
   type RecordingMetadata,
 } from '@/lib/client/recording';
 import styles from './recording.module.css';
 
 export interface RecordingsLibraryProps extends RecordingCallbacks {
+  account: RecordingAccountSession;
   className?: string;
   confirmDelete?: (recording: RecordingMetadata) => boolean | Promise<boolean>;
-  storage?: PrivateRecordingStorage;
 }
 
 function formatDuration(durationMs: number): string {
@@ -27,20 +27,32 @@ function fileExtension(mimeType: string): string {
 }
 
 export function RecordingsLibrary({
+  account,
+  ...props
+}: RecordingsLibraryProps) {
+  return (
+    <RecordingsLibraryView
+      key={account.ownerId}
+      account={account}
+      {...props}
+    />
+  );
+}
+
+function RecordingsLibraryView({
+  account,
   className,
   confirmDelete,
   onEvent,
   onMetadataChange,
-  storage: providedStorage,
 }: RecordingsLibraryProps) {
-  const [storage] = useState(
-    () => providedStorage ?? new PrivateRecordingStorage(),
-  );
+  const storage = account.storage;
   const [recordings, setRecordings] = useState<RecordingMetadata[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [playbackUrl, setPlaybackUrl] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const playbackUrlRef = useRef<string | undefined>(undefined);
   const titleId = useId();
 
   const loadLibrary = useCallback(async () => {
@@ -84,20 +96,26 @@ export function RecordingsLibrary({
       });
     return () => {
       active = false;
-      if (!providedStorage) {
-        storage.close();
+    };
+  }, [storage]);
+
+  useEffect(() => {
+    playbackUrlRef.current = playbackUrl;
+  }, [playbackUrl]);
+
+  useEffect(() => {
+    const cleanup = () => {
+      if (playbackUrlRef.current) {
+        account.revokeObjectUrl(playbackUrlRef.current);
+        playbackUrlRef.current = undefined;
       }
     };
-  }, [providedStorage, storage]);
-
-  useEffect(
-    () => () => {
-      if (playbackUrl) {
-        URL.revokeObjectURL(playbackUrl);
-      }
-    },
-    [playbackUrl],
-  );
+    const unregister = account.registerCleanup(cleanup);
+    return () => {
+      unregister();
+      cleanup();
+    };
+  }, [account]);
 
   const loadBlob = async (id: string) => {
     const recording = await storage.load(id);
@@ -115,9 +133,9 @@ export function RecordingsLibrary({
     try {
       const recording = await loadBlob(id);
       if (playbackUrl) {
-        URL.revokeObjectURL(playbackUrl);
+        account.revokeObjectUrl(playbackUrl);
       }
-      setPlaybackUrl(URL.createObjectURL(recording.blob));
+      setPlaybackUrl(account.createObjectUrl(recording.blob));
       setSelectedId(id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Playback failed.');
@@ -128,14 +146,14 @@ export function RecordingsLibrary({
     setError(undefined);
     try {
       const recording = await loadBlob(metadata.id);
-      const url = URL.createObjectURL(recording.blob);
+      const url = account.createObjectUrl(recording.blob);
       const anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = `pudle-${new Date(metadata.createdAt)
         .toISOString()
         .replaceAll(':', '-')}.${fileExtension(metadata.mimeType)}`;
       anchor.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      setTimeout(() => account.revokeObjectUrl(url), 0);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Export failed.');
     }
@@ -155,7 +173,7 @@ export function RecordingsLibrary({
       await storage.delete(metadata.id);
       if (selectedId === metadata.id) {
         if (playbackUrl) {
-          URL.revokeObjectURL(playbackUrl);
+          account.revokeObjectUrl(playbackUrl);
         }
         setPlaybackUrl(undefined);
         setSelectedId(undefined);
