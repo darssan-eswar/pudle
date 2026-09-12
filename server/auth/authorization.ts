@@ -11,8 +11,13 @@ export async function requireAuthenticatedUser(auth: SessionReader, token: strin
   return user;
 }
 
-export async function requireMembership(store: AuthStore, userId: string, groupId: string) {
-  if (!await store.isGroupMember(userId, groupId)) {
+export async function requireMembership(
+  store: AuthStore,
+  userId: string,
+  groupId: string,
+  now = Date.now(),
+) {
+  if (!await store.isGroupMember(userId, groupId, now)) {
     throw new HttpError(403, 'Group membership required.');
   }
 }

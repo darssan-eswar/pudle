@@ -9,22 +9,32 @@ import {
 import { createAuthService } from '../server/auth/service';
 import { requireAuthenticatedUser, requireMembership } from '../server/auth/authorization';
 import { HttpError, readJsonObject } from '../server/http';
-import { requireDemoReset } from '../server/demo';
+import { authorizeDemoReset } from '../server/demo';
 import { requireMutationOrigin, sha256 } from '../server/security';
+import { signedOutResponse } from '../server/auth/route-helpers';
 
 class MemoryAuthStore implements AuthStore {
   users = new Map<string, UserRecord>();
   sessions = new Map<string, SessionRecord>();
   memberships = new Set<string>();
+  groupExpiries = new Map<string, number | null>();
   rateLimits = new Map<string, number>();
+  failNextSessionWrite = false;
 
   async findUserByEmail(email: string) {
     return [...this.users.values()].find((user) => user.email === email) ?? null;
   }
 
-  async createUser(user: UserRecord) {
-    if (await this.findUserByEmail(user.email)) throw new IdentityConflictError();
+  async createUserWithSession(user: UserRecord, session: SessionRecord) {
+    if ([...this.users.values()].some((existing) => existing.email === user.email)) {
+      throw new IdentityConflictError();
+    }
+    if (this.failNextSessionWrite) {
+      this.failNextSessionWrite = false;
+      throw new Error('session write failed');
+    }
     this.users.set(user.id, user);
+    this.sessions.set(session.tokenHash, session);
   }
 
   async upsertDemoUser(user: UserRecord) {
@@ -44,7 +54,14 @@ class MemoryAuthStore implements AuthStore {
       : null;
   }
 
-  async createSession(session: SessionRecord) {
+  async replaceUserSession(session: SessionRecord) {
+    if (this.failNextSessionWrite) {
+      this.failNextSessionWrite = false;
+      throw new Error('session write failed');
+    }
+    for (const [key, existing] of this.sessions) {
+      if (existing.userId === session.userId) this.sessions.delete(key);
+    }
     this.sessions.set(session.tokenHash, session);
   }
 
@@ -72,8 +89,10 @@ class MemoryAuthStore implements AuthStore {
     }
   }
 
-  async isGroupMember(userId: string, groupId: string) {
-    return this.memberships.has(`${userId}:${groupId}`);
+  async isGroupMember(userId: string, groupId: string, now: number) {
+    const expiresAt = this.groupExpiries.get(groupId);
+    return this.memberships.has(`${userId}:${groupId}`)
+      && (expiresAt === null || (expiresAt !== undefined && expiresAt > now));
   }
 }
 
@@ -127,6 +146,32 @@ test('duplicate normalized email is rejected', async () => {
   );
 });
 
+test('signup rolls back the user when atomic session creation fails', async () => {
+  const { auth, store } = createFixture();
+  store.failNextSessionWrite = true;
+  await assert.rejects(() => auth.signUp({
+    email: 'driver@example.com',
+    displayName: 'Driver',
+    password: 'correct horse battery staple',
+  }), /session write failed/);
+  assert.equal(store.users.size, 0);
+  assert.equal(store.sessions.size, 0);
+});
+
+test('concurrent signup attempts preserve one identity and one session', async () => {
+  const { auth, store } = createFixture();
+  const input = {
+    email: 'driver@example.com',
+    displayName: 'Driver',
+    password: 'correct horse battery staple',
+  };
+  const results = await Promise.allSettled([auth.signUp(input), auth.signUp(input)]);
+  assert.equal(results.filter(({ status }) => status === 'fulfilled').length, 1);
+  assert.equal(results.filter(({ status }) => status === 'rejected').length, 1);
+  assert.equal(store.users.size, 1);
+  assert.equal(store.sessions.size, 1);
+});
+
 test('signin rotates sessions and signout invalidates the current token', async () => {
   const { auth, store } = createFixture();
   const signup = await auth.signUp({
@@ -144,6 +189,40 @@ test('signin rotates sessions and signout invalidates the current token', async 
   assert.equal(store.sessions.size, 1);
   await auth.signOut(signin.token);
   assert.equal(await auth.currentUser(signin.token), null);
+  assert.match(signedOutResponse().headers.get('set-cookie') ?? '', /Max-Age=0/);
+});
+
+test('failed atomic rotation preserves the previous session', async () => {
+  const { auth, store } = createFixture();
+  const signup = await auth.signUp({
+    email: 'driver@example.com',
+    displayName: 'Driver',
+    password: 'correct horse battery staple',
+  });
+  store.failNextSessionWrite = true;
+  await assert.rejects(() => auth.signIn({
+    email: 'driver@example.com',
+    password: 'correct horse battery staple',
+  }), /session write failed/);
+  assert.deepEqual(await auth.currentUser(signup.token), signup.user);
+  assert.equal(store.sessions.size, 1);
+});
+
+test('concurrent signin rotations leave exactly one active session', async () => {
+  const { auth, store } = createFixture();
+  await auth.signUp({
+    email: 'driver@example.com',
+    displayName: 'Driver',
+    password: 'correct horse battery staple',
+  });
+  const credentials = {
+    email: 'driver@example.com',
+    password: 'correct horse battery staple',
+  };
+  const sessions = await Promise.all([auth.signIn(credentials), auth.signIn(credentials)]);
+  const activeUsers = await Promise.all(sessions.map(({ token }) => auth.currentUser(token)));
+  assert.equal(activeUsers.filter(Boolean).length, 1);
+  assert.equal(store.sessions.size, 1);
 });
 
 test('signin uses the same generic error for unknown accounts and wrong passwords', async () => {
@@ -188,8 +267,10 @@ test('expired and anonymous sessions are rejected', async () => {
 test('authorization primitives isolate users from groups they do not belong to', async () => {
   const store = new MemoryAuthStore();
   store.memberships.add('user-a:group-a');
-  await requireMembership(store, 'user-a', 'group-a');
-  await expectHttpError(() => requireMembership(store, 'user-b', 'group-a'), 403);
+  store.groupExpiries.set('group-a', 2_000);
+  await requireMembership(store, 'user-a', 'group-a', 1_000);
+  await expectHttpError(() => requireMembership(store, 'user-b', 'group-a', 1_000), 403);
+  await expectHttpError(() => requireMembership(store, 'user-a', 'group-a', 2_000), 403);
 });
 
 test('JSON parser rejects invalid shape and oversized bodies', async () => {
@@ -227,22 +308,33 @@ test('mutation origin and CSRF header are both required', () => {
   );
 });
 
-test('demo reset requires explicit mode, secret, and account passwords', () => {
-  assert.throws(
-    () => requireDemoReset({}, null),
+test('demo reset gates mode before rate limiting and rate-limits secret guesses', async () => {
+  let attempts = 0;
+  const consumeAttempt = async () => {
+    attempts += 1;
+  };
+  await assert.rejects(
+    () => authorizeDemoReset({}, null, consumeAttempt),
     (error: unknown) => error instanceof HttpError && error.status === 404,
   );
-  assert.throws(
-    () => requireDemoReset({ DEMO_MODE: 'true', DEMO_RESET_SECRET: 'reset' }, 'wrong'),
+  assert.equal(attempts, 0);
+  await assert.rejects(
+    () => authorizeDemoReset(
+      { DEMO_MODE: 'true', DEMO_RESET_SECRET: 'reset' },
+      'wrong',
+      consumeAttempt,
+    ),
     (error: unknown) => error instanceof HttpError && error.status === 403,
   );
-  const passwords = requireDemoReset({
+  assert.equal(attempts, 1);
+  const passwords = await authorizeDemoReset({
     DEMO_MODE: 'true',
     DEMO_RESET_SECRET: 'reset',
     DEMO_DRIVER_PASSWORD: 'configured driver password',
     DEMO_PASSENGER_PASSWORD: 'configured passenger password',
-  }, 'reset');
+  }, 'reset', consumeAttempt);
   assert.equal(passwords.driverPassword, 'configured driver password');
+  assert.equal(attempts, 2);
 });
 
 test('rate-limit storage rejects requests beyond the configured threshold', async () => {
