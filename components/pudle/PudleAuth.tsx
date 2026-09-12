@@ -130,7 +130,9 @@ function AuthPanel({
         </PudleButton>
       </form>
       <PudlePrivacyNotice>
-        Camera frames and raw audio stay in your browser and are not part of account sync.
+        Full recordings and recording audio stay in this browser. Separately enabled cloud
+        analysis can send periodic compressed frames, and foreground voice can use your browser
+        vendor&apos;s speech service.
       </PudlePrivacyNotice>
     </section>
   );

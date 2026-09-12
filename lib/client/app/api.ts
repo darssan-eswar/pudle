@@ -1,3 +1,5 @@
+import { notifySessionExpired } from './session-events';
+
 export const APP_ENDPOINTS = {
   auth: {
     session: '/api/auth/session',
@@ -96,6 +98,7 @@ export class ClientApiError extends Error {
 }
 
 export async function readResponse<T>(response: Response): Promise<T> {
+  notifySessionExpired(response.status);
   const body = (await response.json().catch(() => ({}))) as {
     error?: unknown;
   };

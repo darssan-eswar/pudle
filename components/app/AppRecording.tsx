@@ -415,7 +415,10 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
                 <div className="pudle-camera-rationale">
                   <span className="pudle-camera-rationale__icon" aria-hidden="true">◉</span>
                   <h1 id="camera-title">Your private road view</h1>
-                  <p>Camera access begins only after you tap below. Frames stay on this device.</p>
+                  <p>
+                    Camera access begins only after you tap below. Live frames stay on this device
+                    unless you separately consent to periodic compressed-frame cloud analysis.
+                  </p>
                 </div>
               ) : null}
               <div className="pudle-camera__status">

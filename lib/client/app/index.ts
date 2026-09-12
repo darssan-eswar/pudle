@@ -3,4 +3,5 @@ export * from './cloud-analysis';
 export * from './frame-analysis';
 export * from './lifecycle';
 export * from './pudy';
+export * from './session-events';
 export * from './state';

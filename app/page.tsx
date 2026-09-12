@@ -31,6 +31,7 @@ import {
   authReducer,
   disposeLocalSession,
   initialAuthState,
+  PUDLE_SESSION_EXPIRED_EVENT,
   type AppUser,
   type PudyAction,
 } from '@/lib/client/app';
@@ -50,6 +51,7 @@ function AuthenticatedApp({
 }) {
   const recordingRef = useRef<AppRecordingHandle>(null);
   const pudyRef = useRef<PudyAssistantHandle>(null);
+  const sessionEndingRef = useRef(false);
   const [activeSection, setActiveSection] = useState<PudleSection>('drive');
   const [network, setNetwork] = useState<NetworkState>(
     typeof navigator === 'undefined' || navigator.onLine ? 'online' : 'offline',
@@ -105,9 +107,7 @@ function AuthenticatedApp({
     return 'The current recording was stopped and saved on this device.';
   }, []);
 
-  async function signOut() {
-    setSigningOut(true);
-    setSignOutError('');
+  const disposeSession = useCallback(async () => {
     setAssistantEnabled(false);
     pudyRef.current?.stop();
     await disposeLocalSession({
@@ -123,10 +123,36 @@ function AuthenticatedApp({
         setReportPrepared(false);
       },
     });
+  }, [account]);
+
+  useEffect(() => {
+    function sessionExpired() {
+      if (sessionEndingRef.current) return;
+      sessionEndingRef.current = true;
+      setSigningOut(true);
+      setSignOutError('');
+      void disposeSession()
+        .catch((error) => {
+          console.error('Pudle could not completely dispose the expired local session.', error);
+        })
+        .finally(onSignedOut);
+    }
+
+    window.addEventListener(PUDLE_SESSION_EXPIRED_EVENT, sessionExpired);
+    return () => window.removeEventListener(PUDLE_SESSION_EXPIRED_EVENT, sessionExpired);
+  }, [disposeSession, onSignedOut]);
+
+  async function signOut() {
+    if (sessionEndingRef.current) return;
+    sessionEndingRef.current = true;
+    setSigningOut(true);
+    setSignOutError('');
     try {
+      await disposeSession();
       await authApi.signOut();
       onSignedOut();
     } catch (error) {
+      sessionEndingRef.current = false;
       setSignOutError(`Local media was closed, but the server session could not be ended: ${errorMessage(error)}`);
     }
   }

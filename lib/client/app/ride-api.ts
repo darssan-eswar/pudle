@@ -1,3 +1,5 @@
+import { notifySessionExpired } from './session-events';
+
 export const RIDE_CSRF_HEADER = 'X-Pudle-CSRF';
 
 export interface RideGroup {
@@ -103,6 +105,7 @@ function validateLocalIdentifier(value: string, label: string): string {
 }
 
 async function readResponse(response: Response): Promise<unknown> {
+  notifySessionExpired(response.status);
   const declaredLength = response.headers.get('content-length');
   if (declaredLength && Number(declaredLength) > MAX_RESPONSE_BYTES) {
     throw new RideApiError('The server response was too large.', response.status);

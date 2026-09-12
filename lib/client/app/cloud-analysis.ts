@@ -1,6 +1,7 @@
 import { APP_ENDPOINTS } from './api';
 import type { CloudAnalysisErrorCode } from './api';
 import { CLOUD_FRAME_MAX_BYTES } from './frame-analysis';
+import { notifySessionExpired } from './session-events';
 
 export type CloudAnalysisState =
   | { status: 'unconfigured'; result: null; message: string }
@@ -262,6 +263,7 @@ export const cloudAnalysisClient = {
         credentials: 'same-origin',
         cache: 'no-store',
       });
+      notifySessionExpired(response.status);
       if (!response.ok) {
         return {
           status: 'unconfigured',
@@ -309,6 +311,7 @@ export const cloudAnalysisClient = {
       body: frame,
       signal: options.signal,
     });
+    notifySessionExpired(response.status);
     const body = await response.json().catch(() => ({})) as {
       error?: string;
       code?: CloudAnalysisErrorCode;
