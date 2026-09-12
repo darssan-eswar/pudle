@@ -164,6 +164,59 @@ describe('AppRide', () => {
     act(() => mounted.root.unmount());
   });
 
+  it('presents the active conversation with message hierarchy and collapsed management', async () => {
+    const api = mockApi({
+      listMessages: vi.fn(async () => ({
+        messages: [
+          { id: 'opaque_1', body: 'Meet at the north gate', displayName: 'Blair', createdAt: 1 },
+          { id: 'opaque_2', body: 'On my way', displayName: 'Alex', createdAt: 2 },
+        ],
+        nextCursor: '2',
+      })),
+    });
+    const mounted = mount(api);
+    await settle();
+
+    const conversation = mounted.container.querySelector('.app-ride__conversation');
+    expect(conversation?.querySelector('h2')?.textContent).toBe('School run');
+    expect(conversation?.textContent).toContain('Active conversation');
+
+    const messageItems = conversation?.querySelectorAll('ol[aria-label="Ride messages"] li');
+    expect(messageItems).toHaveLength(2);
+    expect(messageItems?.[0].querySelector('.app-ride__sender')?.textContent).toBe('Blair');
+    expect(messageItems?.[0].querySelector('.app-ride__message-body')?.textContent)
+      .toBe('Meet at the north gate');
+    expect(messageItems?.[0].querySelector('time')?.getAttribute('datetime')).toBeTruthy();
+    expect(messageItems?.[1].classList.contains('app-ride__message--own')).toBe(true);
+
+    const management = conversation?.querySelector('details');
+    const summary = management?.querySelector('summary');
+    expect(summary?.textContent).toBe('Manage ride groups');
+    expect(management?.hasAttribute('open')).toBe(false);
+    expect(management?.querySelector('button')?.textContent).toContain('School run');
+
+    act(() => summary?.click());
+    expect(management?.hasAttribute('open')).toBe(true);
+    expect(conversation?.querySelector('form.app-ride__composer textarea')).toBeTruthy();
+
+    act(() => mounted.root.unmount());
+  });
+
+  it('keeps create and join onboarding obvious when there is no selected group', async () => {
+    const mounted = mount(mockApi({
+      listGroups: vi.fn(async () => []),
+    }));
+    await settle();
+
+    const onboarding = mounted.container.querySelector('.app-ride__onboarding');
+    expect(onboarding?.querySelector('h2')?.textContent).toBe('Start or join a ride');
+    expect(button(onboarding as HTMLElement, 'Create group')).toBeTruthy();
+    expect(button(onboarding as HTMLElement, 'Join group')).toBeTruthy();
+    expect(mounted.container.querySelector('.app-ride__management')).toBeNull();
+
+    act(() => mounted.root.unmount());
+  });
+
   it('aborts group requests on account change and polling on unmount', async () => {
     const groupSignals: AbortSignal[] = [];
     const messageSignals: AbortSignal[] = [];

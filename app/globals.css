@@ -383,6 +383,344 @@ select:focus-visible {
   font-size: 0.8rem;
 }
 
+/* AppRide is intentionally isolated from the shared demo ride component. */
+.app-ride {
+  gap: 18px;
+  padding-bottom: 0;
+}
+
+.app-ride__masthead {
+  align-items: center;
+}
+
+.app-ride__masthead h1 {
+  font-size: clamp(1.55rem, 7vw, 2.35rem);
+}
+
+.app-ride__connection {
+  flex: 0 0 auto;
+}
+
+.app-ride__connection--online {
+  color: var(--pudle-mint-deep);
+  background: var(--pudle-mint);
+}
+
+.app-ride__connection--offline {
+  color: var(--pudle-danger);
+  background: var(--pudle-peach);
+}
+
+.app-ride__connection--reconnecting {
+  color: #774917;
+  background: #f8e7c7;
+}
+
+.app-ride__alert,
+.app-ride__network-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--pudle-radius-sm);
+}
+
+.app-ride__alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--pudle-danger);
+  background: var(--pudle-peach);
+}
+
+.app-ride__alert p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.app-ride__network-note {
+  color: #774917;
+  background: #f8e7c7;
+  font-weight: 700;
+}
+
+.app-ride__onboarding {
+  padding: 18px;
+  display: grid;
+  gap: 20px;
+  border: 1px solid var(--pudle-border);
+  border-radius: var(--pudle-radius);
+  background: linear-gradient(145deg, rgb(220 208 247 / 44%), var(--pudle-paper) 60%);
+}
+
+.app-ride__onboarding h2,
+.app-ride__conversation h2,
+.app-ride__group-list h3 {
+  margin: 0;
+}
+
+.app-ride__onboarding p:not(.pudle-eyebrow),
+.app-ride__conversation-header > p:last-child,
+.app-ride__management-note {
+  margin: 7px 0 0;
+  color: var(--pudle-muted);
+  line-height: 1.4;
+}
+
+.app-ride__onboarding-forms,
+.app-ride__management-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.app-ride__form {
+  display: grid;
+  gap: 10px;
+}
+
+.app-ride__form .pudle-button {
+  width: 100%;
+}
+
+.app-ride__group-list {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.app-ride__group-list ul {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.app-ride__group-list li {
+  flex: 0 0 auto;
+}
+
+.app-ride__group-button {
+  min-width: 132px;
+  padding-inline: 14px;
+  display: grid;
+  justify-items: start;
+  gap: 1px;
+  border: 1px solid transparent;
+  text-align: left;
+}
+
+.app-ride__group-button small {
+  color: var(--pudle-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.app-ride__group-button[aria-pressed='true'] {
+  border-color: var(--pudle-lilac-deep);
+  color: var(--pudle-ink);
+  background: var(--pudle-lilac);
+}
+
+.app-ride__conversation {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.app-ride__conversation-header {
+  padding: 18px;
+  border-radius: var(--pudle-radius);
+  background: linear-gradient(135deg, var(--pudle-lilac), rgb(217 241 232 / 72%));
+}
+
+.app-ride__conversation-header h2 {
+  overflow-wrap: anywhere;
+  font-size: clamp(1.75rem, 8vw, 2.65rem);
+  letter-spacing: -0.045em;
+}
+
+.app-ride__message-region {
+  min-height: 190px;
+  display: grid;
+}
+
+.app-ride__messages {
+  max-height: min(48dvh, 440px);
+  margin: 0;
+  padding: 4px 2px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.app-ride__message {
+  width: fit-content;
+  max-width: min(88%, 34rem);
+  padding: 11px 14px 10px;
+  align-self: flex-start;
+  border: 1px solid var(--pudle-border);
+  border-radius: 7px 20px 20px;
+  background: var(--pudle-paper);
+  box-shadow: 0 5px 15px rgb(42 32 57 / 6%);
+}
+
+.app-ride__message--own {
+  align-self: flex-end;
+  border-color: rgb(108 85 161 / 20%);
+  border-radius: 20px 7px 20px 20px;
+  background: var(--pudle-lilac);
+}
+
+.app-ride__sender {
+  display: block;
+  color: var(--pudle-lilac-deep);
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
+.app-ride__message--own .app-ride__sender {
+  color: #49356f;
+}
+
+.app-ride__message-body {
+  margin: 4px 0 7px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 0.96rem;
+  line-height: 1.4;
+}
+
+.app-ride__message-time {
+  display: block;
+  color: var(--pudle-muted);
+  font-size: 0.7rem;
+  line-height: 1.2;
+}
+
+.app-ride__empty {
+  margin: 0;
+  padding: 34px 18px;
+  align-self: center;
+  border: 1px dashed var(--pudle-border);
+  border-radius: var(--pudle-radius-sm);
+  color: var(--pudle-muted);
+  text-align: center;
+}
+
+.app-ride__composer {
+  position: sticky;
+  z-index: 5;
+  bottom: calc(88px + var(--pudle-safe-bottom));
+  margin-inline: -20px;
+  padding: 12px 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  border-block: 1px solid rgb(222 216 208 / 80%);
+  background: rgb(255 253 248 / 96%);
+  box-shadow: 0 -10px 24px rgb(42 32 57 / 7%);
+  backdrop-filter: blur(14px);
+}
+
+.app-ride__composer textarea {
+  min-height: 52px;
+  max-height: 112px;
+  resize: none;
+}
+
+.app-ride__composer .pudle-button {
+  min-height: 52px;
+}
+
+.app-ride__management {
+  margin-bottom: 20px;
+  border: 1px solid var(--pudle-border);
+  border-radius: var(--pudle-radius-sm);
+  background: var(--pudle-paper);
+}
+
+.app-ride__management summary {
+  min-height: 48px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.app-ride__management summary::-webkit-details-marker {
+  display: none;
+}
+
+.app-ride__management summary::after {
+  content: '+';
+  color: var(--pudle-lilac-deep);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.app-ride__management[open] summary::after {
+  content: '−';
+}
+
+.app-ride__management summary:focus-visible {
+  outline: 3px solid var(--pudle-lilac-deep);
+  outline-offset: 3px;
+}
+
+.app-ride__management-body {
+  padding: 4px 14px 16px;
+  display: grid;
+  gap: 18px;
+}
+
+.app-ride__invite {
+  display: grid;
+  gap: 10px;
+}
+
+.app-ride__invite > p {
+  margin: 0;
+  color: var(--pudle-muted);
+}
+
+@media (min-width: 700px) {
+  .app-ride__onboarding-forms,
+  .app-ride__management-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-ride__composer {
+    position: static;
+    margin-inline: 0;
+    padding: 14px;
+    border: 1px solid var(--pudle-border);
+    border-radius: var(--pudle-radius-sm);
+    box-shadow: none;
+  }
+
+  .app-ride__invite {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .app-ride__invite > p {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 370px) {
   .pudle-shell__main {
     padding-inline: 10px;
@@ -403,6 +741,20 @@ select:focus-visible {
   }
 
   .pudle-report-options {
+    grid-template-columns: 1fr;
+  }
+
+  .app-ride__alert,
+  .app-ride__masthead {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-ride__connection {
+    align-self: flex-start;
+  }
+
+  .app-ride__composer {
     grid-template-columns: 1fr;
   }
 }
@@ -434,6 +786,19 @@ select:focus-visible {
   .pudle-camera__viewport,
   .pudle-live-video {
     min-height: calc(100dvh - 150px);
+  }
+
+  .app-ride__composer {
+    position: static;
+    margin-inline: 0;
+    padding: 12px;
+    border: 1px solid var(--pudle-border);
+    border-radius: var(--pudle-radius-sm);
+    box-shadow: none;
+  }
+
+  .app-ride__messages {
+    max-height: 52dvh;
   }
 }
 
