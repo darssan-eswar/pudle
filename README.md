@@ -59,7 +59,7 @@ Endpoints:
 | `/api/auth/signout` | `POST` | Invalidates the current token and clears the cookie |
 | `/api/demo/reset` | `POST` | Resets demo credentials only under the explicit demo gate |
 
-Clients never provide a trusted user ID. Server routes derive identity from the session cookie. Email is trimmed/lowercased, names and passwords are bounded, payloads are size/shape checked, and auth mutations are rate-limited.
+Clients never provide a trusted user ID. Server routes derive identity from the session cookie. Email is trimmed/lowercased, names and passwords are bounded, and payloads are size/shape checked. Signup, sign-in, event creation, and enabled demo-reset attempts are rate-limited. Sign-out is deliberately not rate-limited so a client can always invalidate its session and clear its cookie.
 
 ## Demo accounts
 

@@ -45,12 +45,25 @@ export class D1AuthStore implements AuthStore {
     return row ? toUser(row) : null;
   }
 
-  async createUser(user: UserRecord) {
+  async createUserWithSession(user: UserRecord, session: SessionRecord) {
     try {
-      await this.d1.prepare(
-        `INSERT INTO users (id, email, display_name, password_hash, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      ).bind(user.id, user.email, user.displayName, user.passwordHash, user.createdAt, user.updatedAt).run();
+      await this.d1.batch([
+        this.d1.prepare(
+          `INSERT INTO users (id, email, display_name, password_hash, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        ).bind(user.id, user.email, user.displayName, user.passwordHash, user.createdAt, user.updatedAt),
+        this.d1.prepare(
+          `INSERT INTO sessions (id, user_id, token_hash, created_at, last_seen_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          session.id,
+          session.userId,
+          session.tokenHash,
+          session.createdAt,
+          session.lastSeenAt,
+          session.expiresAt,
+        ),
+      ]);
     } catch (error) {
       if (error instanceof Error && error.message.includes('UNIQUE constraint failed: users.email')) {
         throw new IdentityConflictError();
@@ -90,18 +103,21 @@ export class D1AuthStore implements AuthStore {
     };
   }
 
-  async createSession(session: SessionRecord) {
-    await this.d1.prepare(
-      `INSERT INTO sessions (id, user_id, token_hash, created_at, last_seen_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      session.id,
-      session.userId,
-      session.tokenHash,
-      session.createdAt,
-      session.lastSeenAt,
-      session.expiresAt,
-    ).run();
+  async replaceUserSession(session: SessionRecord) {
+    await this.d1.batch([
+      this.d1.prepare('DELETE FROM sessions WHERE user_id = ?').bind(session.userId),
+      this.d1.prepare(
+        `INSERT INTO sessions (id, user_id, token_hash, created_at, last_seen_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        session.id,
+        session.userId,
+        session.tokenHash,
+        session.createdAt,
+        session.lastSeenAt,
+        session.expiresAt,
+      ),
+    ]);
   }
 
   async deleteSession(tokenHash: string) {
@@ -140,10 +156,14 @@ export class D1AuthStore implements AuthStore {
     ]);
   }
 
-  async isGroupMember(userId: string, groupId: string) {
+  async isGroupMember(userId: string, groupId: string, now: number) {
     const row = await this.d1.prepare(
-      'SELECT 1 AS allowed FROM group_memberships WHERE user_id = ? AND group_id = ?',
-    ).bind(userId, groupId).first<{ allowed: number }>();
+      `SELECT 1 AS allowed
+       FROM group_memberships gm
+       JOIN groups g ON g.id = gm.group_id
+       WHERE gm.user_id = ? AND gm.group_id = ?
+         AND (g.expires_at IS NULL OR g.expires_at > ?)`,
+    ).bind(userId, groupId, now).first<{ allowed: number }>();
     return row?.allowed === 1;
   }
 }

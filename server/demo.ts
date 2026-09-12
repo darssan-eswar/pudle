@@ -7,8 +7,13 @@ export type DemoConfig = {
   DEMO_PASSENGER_PASSWORD?: string;
 };
 
-export function requireDemoReset(config: DemoConfig, providedSecret: string | null) {
+export async function authorizeDemoReset(
+  config: DemoConfig,
+  providedSecret: string | null,
+  consumeAttempt: () => Promise<void>,
+) {
   if (config.DEMO_MODE !== 'true') throw new HttpError(404, 'Not found.');
+  await consumeAttempt();
   if (!config.DEMO_RESET_SECRET || providedSecret !== config.DEMO_RESET_SECRET) {
     throw new HttpError(403, 'Demo reset is not allowed.');
   }
