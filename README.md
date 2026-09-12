@@ -6,7 +6,8 @@ Pudle (**Peer Updated Driving Logic Engine**) is a privacy-first road-intelligen
 
 - Live rear-camera preview and optional on-device TensorFlow.js / COCO-SSD detection
 - Manual and edge-assisted road-event metadata, rounded to three decimal places
-- D1-backed events limited to two miles and 30 minutes
+- Authenticated D1-backed events limited to two miles and 30 minutes, with owner resolution and idempotent acknowledgements
+- Invite-only, 24-hour demo ride groups and member-isolated plain-text messaging
 - Email/password accounts with PBKDF2-SHA-256 password hashes
 - Rotating opaque sessions in `Secure`, `HttpOnly`, `SameSite=Strict` cookies; only SHA-256 token hashes are stored
 - Owner-isolated D1 recording metadata APIs (media is never accepted or stored)
@@ -15,7 +16,7 @@ Pudle (**Peer Updated Driving Logic Engine**) is a privacy-first road-intelligen
 - D1 contracts for event acknowledgement/resolution, invite-only groups, messages, idempotency, rate limits, and retention
 - Pudy-labelled local demo query UI
 
-Camera recording in the client, group UI/messaging routes, and full Pudy voice behavior remain outside this backend slice.
+Private browser-recording modules, cloud analysis APIs, and group/messaging APIs are implemented. Their final mobile UI integration and grounded Pudy voice behavior are still in progress.
 
 ## Privacy model
 
@@ -96,6 +97,26 @@ Only `video/webm` and `video/mp4` labels are accepted as metadata. These JSON en
 - optional `X-Pudle-Recording-Id` for caller-owned metadata
 
 Success returns `{ jobId, result }`, where `result` has deterministic server-derived `summary` and `uncertainty`, allowlisted `observations`, bounded `confidence`, `source`, `model`, `capturedAt`, and `analyzedAt`. Provider-authored free-form text is neither returned nor persisted. Errors distinguish `provider_unconfigured`, `provider_timeout`, `provider_quota`, `provider_error`, and `malformed_provider_response`. Completed/error responses are replayed for the same user/key with `Idempotency-Replayed: true`. Analysis is limited to 12 requests/user/minute, 30 requests/IP/minute, one live leased job/user, and one accepted frame/user/five seconds. A dead worker's 30-second processing lease is reclaimed independently of the 30-minute result/idempotency retention window.
+
+## Shared events and ride APIs
+
+All endpoints below require the server session cookie. Mutations additionally require the same-origin and `X-Pudle-CSRF: 1` checks described above. Event creation, acknowledgement, resolution, and message sends require an `Idempotency-Key` header containing 8–128 URL-safe characters.
+
+| Endpoint | Method | Behavior |
+|---|---|---|
+| `/api/events?lat=…&lng=…` | `GET` | Returns at most 30 unresolved events no more than two miles away and younger than 30 minutes |
+| `/api/events` | `POST` | Creates an allowlisted report after rounding coordinates to three decimals |
+| `/api/events/:eventId/ack` | `POST` | Idempotently acknowledges a live event once per authenticated identity |
+| `/api/events/:eventId/resolve` | `POST` | Resolves a live event only when the session user owns it |
+| `/api/groups` | `GET` | Lists only the caller’s active memberships |
+| `/api/groups` | `POST` | Creates an invite-only demo ride group with 24-hour retention |
+| `/api/groups/:groupId/invites` | `POST` | Lets the owner create an email-bound invite expiring in 5–1440 minutes |
+| `/api/groups/invites/redeem` | `POST` | Atomically creates membership and consumes a valid, unused invite for the authenticated account email |
+| `/api/groups/:groupId/membership` | `DELETE` | Leaves a group; owners cannot orphan their group |
+| `/api/groups/:groupId/messages` | `GET` | Polls up to 50 member-only messages using the returned stable cursor |
+| `/api/groups/:groupId/messages` | `POST` | Stores up to 1,000 characters as plain text, with retry deduplication |
+
+Nearby-event responses never contain coordinates, precise distances, owner identity, or private location data. Query and event locations are reduced to a fixed coarse grid for radius checks, and responses expose only broad distance bands. Invite redemption uses one transactional D1 batch: guarded membership creation and invite consumption either both succeed or both roll back, and both conditions reject expired parent groups. Message responses contain only the stable message ID, plain-text body, timestamp, and the sender’s member-safe display name; consumers must render `body` as text, never as HTML. Poll cursors use a persisted `INTEGER PRIMARY KEY AUTOINCREMENT` sequence separate from public opaque message IDs, so deleting retained messages cannot cause a cursor value to be reused. Polling is request/response only and may be performed every five seconds. Expired events, invites, messages, groups, idempotency records, and rate-limit rows are removed during authenticated API activity.
 
 ## Demo accounts
 

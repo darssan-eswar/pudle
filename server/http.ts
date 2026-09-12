@@ -67,7 +67,12 @@ export async function readJsonObject(request: Request, maxBytes = 8_192): Promis
   }
 
   const bytes = await readBodyBytes(request, maxBytes);
-  const text = new TextDecoder().decode(bytes);
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw new HttpError(400, 'Request body must be valid UTF-8.');
+  }
 
   let value: unknown;
   try {

@@ -19,9 +19,9 @@ Deliver a recording-ready, mobile-first Pudle demo with real authenticated persi
    - Disclose cloud analysis before opt-in, sample bounded compressed frames, authenticate uploads, enforce limits/timeouts, and validate structured provider output.
 
 3. **Nearby events and private ride communication**
-   - Connect reports and the nearby feed to authenticated APIs.
-   - Enforce coordinate rounding, two-mile filtering, 30-minute expiration, ownership, acknowledgement, resolution, and idempotency.
-   - Add invite-only ride membership and persisted text messages with reliable polling.
+   - Authenticated APIs now enforce coordinate rounding, two-mile filtering, 30-minute expiration, ownership, acknowledgement, resolution, and idempotency.
+   - Invite-only ride membership uses transactional, expiry-guarded invite redemption; persisted plain-text messages use a never-reused sequence for stable cursor polling.
+   - UI integration for reports, memberships, invites, and group messaging remains pending.
 
 4. **Grounded Pudy and product experience**
    - Implement explicit foreground “Hey Pudy” listening with browser capability disclosure, tap/text fallbacks, and speech output.
