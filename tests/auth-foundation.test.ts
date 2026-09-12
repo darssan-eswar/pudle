@@ -290,6 +290,17 @@ test('JSON parser rejects invalid shape and oversized bodies', async () => {
     ),
     413,
   );
+  await expectHttpError(
+    () => readJsonObject(
+      new Request('https://pudle.test/api', {
+        method: 'POST',
+        headers: { ...headers, 'content-length': '2' },
+        body: JSON.stringify({ value: '€'.repeat(20) }),
+      }),
+      32,
+    ),
+    413,
+  );
 });
 
 test('mutation origin and CSRF header are both required', () => {

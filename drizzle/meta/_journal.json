@@ -22,6 +22,13 @@
       "when": 1789185379415,
       "tag": "0002_fix-road-event-user-fk",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789185730074,
+      "tag": "0003_curvy_texas_twister",
+      "breakpoints": true
     }
   ]
 }

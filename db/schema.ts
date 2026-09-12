@@ -112,6 +112,7 @@ export const roadEvents = sqliteTable(
     longitude: real('longitude').notNull(),
     confidence: real('confidence').notNull().default(1),
     source: text('source').notNull().default('manual'),
+    direction: text('direction'),
     resolvedAt: integer('resolved_at', { mode: 'number' }),
     createdAt: integer('created_at', { mode: 'number' }).notNull(),
     expiresAt: integer('expires_at', { mode: 'number' }).notNull(),
@@ -192,7 +193,8 @@ export const groupInvites = sqliteTable(
 export const messages = sqliteTable(
   'messages',
   {
-    id: text('id').primaryKey(),
+    sequence: integer('sequence', { mode: 'number' }).primaryKey({ autoIncrement: true }),
+    id: text('id').notNull(),
     groupId: text('group_id').notNull().references(() => groups.id, { onDelete: 'cascade' }),
     userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     body: text('body').notNull(),
@@ -200,6 +202,7 @@ export const messages = sqliteTable(
     expiresAt: integer('expires_at', { mode: 'number' }).notNull(),
   },
   (table) => [
+    uniqueIndex('idx_messages_id').on(table.id),
     index('idx_messages_group_created').on(table.groupId, table.createdAt),
     index('idx_messages_user').on(table.userId),
     index('idx_messages_expires_at').on(table.expiresAt),
