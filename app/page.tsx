@@ -20,6 +20,7 @@ import {
 } from '@/components/pudle';
 import {
   AppRecording,
+  NearbyEvents,
   PudyAssistant,
   type AppRecordingHandle,
   type PudyAssistantHandle,
@@ -58,6 +59,7 @@ function AuthenticatedApp({
   );
   const [sceneLabels, setSceneLabels] = useState<string[]>([]);
   const [analysisLabels, setAnalysisLabels] = useState<string[]>([]);
+  const [nearbyLabels, setNearbyLabels] = useState<string[]>([]);
   const [recordingActive, setRecordingActive] = useState(false);
   const [reportPrepared, setReportPrepared] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -98,7 +100,7 @@ function AuthenticatedApp({
   const handlePudyAction = useCallback(async (action: PudyAction) => {
     if (action === 'prepare-hazard-report') {
       setReportPrepared(true);
-      return 'Hazard report prepared. Reporting stays disabled until you review it in the Ride integration.';
+      return 'A road report is prepared. Review the observed condition and confirm it on screen before anything is shared.';
     }
     if (!recordingRef.current?.isRecording()) {
       return 'No recording is active. Start one from the camera controls first.';
@@ -120,6 +122,7 @@ function AuthenticatedApp({
       clearUi: () => {
         setSceneLabels([]);
         setAnalysisLabels([]);
+        setNearbyLabels([]);
         setReportPrepared(false);
       },
     });
@@ -200,22 +203,24 @@ function AuthenticatedApp({
 
       {activeSection === 'drive' ? (
         <>
+          <NearbyEvents
+            active
+            online={network === 'online'}
+            reconnecting={network === 'reconnecting'}
+            currentUserId={user.id}
+            preparedByPudy={reportPrepared}
+            onPreparedHandled={() => setReportPrepared(false)}
+            onNearbyLabelsChange={setNearbyLabels}
+          />
+
           <PudyAssistant
             ref={pudyRef}
             enabled={assistantEnabled}
             sceneLabels={sceneLabels}
             analysisLabels={analysisLabels}
-            nearbyLabels={[]}
+            nearbyLabels={nearbyLabels}
             onAction={handlePudyAction}
           />
-
-          {reportPrepared ? (
-            <section className="pudle-card pudle-confirm" aria-label="Prepared hazard report">
-              <strong>Hazard report prepared, not shared.</strong>
-              <p>Review and confirmation will be provided by the incoming AppRide integration.</p>
-              <PudleButton variant="quiet" onClick={() => setReportPrepared(false)}>Cancel report</PudleButton>
-            </section>
-          ) : null}
         </>
       ) : null}
 

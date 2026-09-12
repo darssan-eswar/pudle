@@ -27,16 +27,88 @@ body {
 button,
 a,
 input,
-textarea {
+textarea,
+select {
   -webkit-tap-highlight-color: transparent;
 }
 
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+select:focus-visible {
   outline: 3px solid #6c55a1;
   outline-offset: 3px;
+}
+
+.pudle-nearby {
+  display: grid;
+  gap: 14px;
+}
+
+.pudle-location-copy,
+.pudle-empty-copy {
+  margin: 0;
+  color: var(--pudle-muted);
+  line-height: 1.5;
+}
+
+.pudle-nearby-actions,
+.pudle-review-actions,
+.pudle-event-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pudle-report-review {
+  min-width: 0;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  border-radius: var(--pudle-radius-sm);
+  background: var(--pudle-mint);
+}
+
+.pudle-report-review h3,
+.pudle-report-review p,
+.pudle-mutation-error p {
+  margin: 0;
+}
+
+.pudle-field select {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--pudle-border);
+  border-radius: 12px;
+  color: var(--pudle-ink);
+  background: var(--pudle-paper);
+  font: inherit;
+}
+
+.pudle-event-card__topline h3 {
+  margin: 0;
+}
+
+.pudle-event-card__topline span {
+  flex: 0 0 auto;
+  color: var(--pudle-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.pudle-event-controls .pudle-button {
+  flex: 1 1 10rem;
+}
+
+.pudle-mutation-error {
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  border-radius: var(--pudle-radius-sm);
+  color: var(--pudle-danger);
+  background: var(--pudle-peach);
 }
 
 .sr-only {
