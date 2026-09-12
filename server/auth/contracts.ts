@@ -24,15 +24,15 @@ export type SessionRecord = {
 
 export type AuthStore = {
   findUserByEmail(email: string): Promise<UserRecord | null>;
-  createUser(user: UserRecord): Promise<void>;
+  createUserWithSession(user: UserRecord, session: SessionRecord): Promise<void>;
   upsertDemoUser(user: UserRecord): Promise<void>;
   findSession(tokenHash: string): Promise<{ session: SessionRecord; user: PublicUser } | null>;
-  createSession(session: SessionRecord): Promise<void>;
+  replaceUserSession(session: SessionRecord): Promise<void>;
   deleteSession(tokenHash: string): Promise<void>;
   deleteUserSessions(userId: string): Promise<void>;
   consumeRateLimit(keyHash: string, limit: number, windowMs: number, now: number): Promise<boolean>;
   cleanupExpired(now: number): Promise<void>;
-  isGroupMember(userId: string, groupId: string): Promise<boolean>;
+  isGroupMember(userId: string, groupId: string, now: number): Promise<boolean>;
 };
 
 export class IdentityConflictError extends Error {}
