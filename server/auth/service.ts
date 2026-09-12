@@ -47,20 +47,19 @@ function publicUser(user: UserRecord): PublicUser {
 }
 
 export function createAuthService({ store, now = Date.now, createId = crypto.randomUUID.bind(crypto) }: AuthDependencies) {
-  async function issueSession(userId: string) {
+  async function buildSession(userId: string) {
     const token = createOpaqueToken();
     const tokenHash = await sha256(token);
     const timestamp = now();
-    await store.deleteUserSessions(userId);
-    await store.createSession({
+    const session = {
       id: createId(),
       userId,
       tokenHash,
       createdAt: timestamp,
       lastSeenAt: timestamp,
       expiresAt: timestamp + SESSION_TTL_MS,
-    });
-    return token;
+    };
+    return { token, session };
   }
 
   return {
@@ -80,15 +79,16 @@ export function createAuthService({ store, now = Date.now, createId = crypto.ran
         createdAt: timestamp,
         updatedAt: timestamp,
       };
+      const issued = await buildSession(user.id);
       try {
-        await store.createUser(user);
+        await store.createUserWithSession(user, issued.session);
       } catch (error) {
         if (error instanceof IdentityConflictError) {
           throw new HttpError(409, 'An account with that email already exists.');
         }
         throw error;
       }
-      return { user: publicUser(user), token: await issueSession(user.id) };
+      return { user: publicUser(user), token: issued.token };
     },
 
     async signIn(input: Record<string, unknown>) {
@@ -101,7 +101,9 @@ export function createAuthService({ store, now = Date.now, createId = crypto.ran
       if (!user || !passwordMatches) {
         throw new HttpError(401, 'Invalid email or password.');
       }
-      return { user: publicUser(user), token: await issueSession(user.id) };
+      const issued = await buildSession(user.id);
+      await store.replaceUserSession(issued.session);
+      return { user: publicUser(user), token: issued.token };
     },
 
     async currentUser(token: string | null) {
