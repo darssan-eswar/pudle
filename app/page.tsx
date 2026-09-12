@@ -33,6 +33,7 @@ import {
   disposeLocalSession,
   initialAuthState,
   PUDLE_SESSION_EXPIRED_EVENT,
+  stopRecordingForPudy,
   type AppUser,
   type PudyAction,
 } from '@/lib/client/app';
@@ -102,11 +103,7 @@ function AuthenticatedApp({
       setReportPrepared(true);
       return 'A road report is prepared. Review the observed condition and confirm it on screen before anything is shared.';
     }
-    if (!recordingRef.current?.isRecording()) {
-      return 'No recording is active. Start one from the camera controls first.';
-    }
-    await recordingRef.current.stopAndSave();
-    return 'The current recording was stopped and saved on this device.';
+    return stopRecordingForPudy(recordingRef.current);
   }, []);
 
   const disposeSession = useCallback(async () => {

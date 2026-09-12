@@ -3,6 +3,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RecordingAccountSession } from './account-session';
+import { RecordingError } from './types';
 import {
   useRecordingController,
   type RecordingControllerApi,
@@ -36,6 +37,11 @@ class FakeMediaRecorder extends EventTarget {
 
   stop(): void {
     this.state = 'inactive';
+    const dataEvent = new Event('dataavailable') as BlobEvent;
+    Object.defineProperty(dataEvent, 'data', {
+      value: new Blob(['synthetic recording'], { type: this.mimeType }),
+    });
+    this.dispatchEvent(dataEvent);
     this.dispatchEvent(new Event('stop'));
   }
 }
@@ -231,5 +237,44 @@ describe('useRecordingController acquisition lifecycle', () => {
       expect.objectContaining({ type: 'stream-ready' }),
     );
     mounted.account.dispose();
+  });
+
+  it('returns an explicit failure when the completed recording cannot be stored', async () => {
+    const track = new FakeTrack();
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getSupportedConstraints: () => ({ facingMode: true }),
+        getUserMedia: vi.fn().mockResolvedValue(mediaStream(track)),
+      },
+    });
+    const recordingAccount = account();
+    vi.spyOn(recordingAccount.storage, 'save').mockRejectedValue(
+      new RecordingError(
+        'storage-quota',
+        'This device does not have enough private storage for the recording.',
+      ),
+    );
+    const mounted = mountController(vi.fn(), recordingAccount);
+
+    await act(async () => {
+      await mounted.controller().acquireCamera();
+    });
+    act(() => mounted.controller().start());
+    let result!: Awaited<ReturnType<RecordingControllerApi['stop']>>;
+    await act(async () => {
+      result = await mounted.controller().stop();
+    });
+
+    expect(result).toMatchObject({
+      saved: false,
+      error: {
+        code: 'storage-quota',
+        message: 'This device does not have enough private storage for the recording.',
+      },
+    });
+    expect(mounted.controller().state).toBe('error');
+    act(() => mounted.root.unmount());
+    recordingAccount.dispose();
   });
 });

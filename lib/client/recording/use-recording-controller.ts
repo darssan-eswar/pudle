@@ -19,6 +19,10 @@ export interface UseRecordingControllerOptions extends RecordingCallbacks {
   account: RecordingAccountSession;
 }
 
+export type StopRecordingResult =
+  | { saved: true }
+  | { saved: false; error: RecordingError };
+
 export interface RecordingControllerApi {
   state: RecordingState;
   stream?: MediaStream;
@@ -29,7 +33,7 @@ export interface RecordingControllerApi {
   start(): void;
   pause(): void;
   resume(): void;
-  stop(): Promise<void>;
+  stop(): Promise<StopRecordingResult>;
   dispose(): void;
   reset(): void;
   clearError(): void;
@@ -258,8 +262,11 @@ export function useRecordingController(
         throw new RecordingError('invalid-state', 'No recording is active.');
       }
       await saveCompleted(completed);
+      return { saved: true } as const;
     } catch (caught) {
-      reportError(caught);
+      const nextError = normalizeError(caught);
+      reportError(nextError);
+      return { saved: false, error: nextError } as const;
     }
   }, [reportError, saveCompleted]);
 

@@ -9,6 +9,14 @@ export type ParsedPudyRequest =
   | { kind: 'unknown' }
   | { kind: 'missing-wake-phrase' };
 
+export interface PudyRecordingControl {
+  isRecording(): boolean;
+  stopAndSave(): Promise<
+    | { saved: true }
+    | { saved: false; error: { message: string } }
+  >;
+}
+
 const WAKE_PHRASE = /\bhey[\s,]+pudy\b/i;
 
 export function parsePudyRequest(
@@ -72,4 +80,17 @@ export function groundPudyAnswer(
       ? `Current cloud analysis and local scene: ${labels.join(', ')}.`
       : `Local scene: ${labels.join(', ')}.`
     : `Displayed nearby activity: ${labels.join(', ')}.`;
+}
+
+export async function stopRecordingForPudy(
+  recording: PudyRecordingControl | null,
+): Promise<string> {
+  if (!recording?.isRecording()) {
+    return 'No recording is active. Start one from the camera controls first.';
+  }
+
+  const result = await recording.stopAndSave();
+  return result.saved
+    ? 'The current recording was stopped and saved on this device.'
+    : `The recording stopped, but it was not saved. ${result.error.message}`;
 }

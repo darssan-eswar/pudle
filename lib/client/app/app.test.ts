@@ -14,6 +14,7 @@ import {
   parseCloudAnalysisStatus,
   parsePudyRequest,
   recordingsApi,
+  stopRecordingForPudy,
 } from './index';
 
 const userA = { id: 'server-user-a', email: 'a@example.com', displayName: 'A' };
@@ -98,6 +99,23 @@ describe('Pudy command boundary', () => {
       kind: 'action',
       action: 'stop-recording',
     });
+  });
+
+  it('reports recording persistence failures instead of claiming a save', async () => {
+    await expect(stopRecordingForPudy({
+      isRecording: () => true,
+      stopAndSave: async () => ({
+        saved: false,
+        error: { message: 'This device does not have enough private storage.' },
+      }),
+    })).resolves.toBe(
+      'The recording stopped, but it was not saved. This device does not have enough private storage.',
+    );
+
+    await expect(stopRecordingForPudy({
+      isRecording: () => true,
+      stopAndSave: async () => ({ saved: true }),
+    })).resolves.toBe('The current recording was stopped and saved on this device.');
   });
 });
 

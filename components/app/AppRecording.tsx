@@ -13,6 +13,7 @@ import {
   type RecordingAccountSession,
   type RecordingEvent,
   type ReplayInput,
+  type StopRecordingResult,
   useRecordingController,
 } from '@/lib/client/recording';
 import { RecordingsLibrary } from '@/components/recording';
@@ -37,7 +38,7 @@ export interface AppRecordingHandle {
   stopMedia(): void;
   revokeUrls(): void;
   dispose(): void;
-  stopAndSave(): Promise<void>;
+  stopAndSave(): Promise<StopRecordingResult>;
   isRecording(): boolean;
 }
 

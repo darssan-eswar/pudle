@@ -46,7 +46,22 @@ export interface RecordingStorageOptions {
 
 interface BlobRecord {
   id: string;
-  blob: Blob;
+  blob?: Blob;
+  bytes?: ArrayBuffer;
+  mimeType?: string;
+}
+
+function isBlob(value: unknown): value is Blob {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'arrayBuffer' in value &&
+    typeof value.arrayBuffer === 'function'
+  );
+}
+
+function isArrayBuffer(value: unknown): value is ArrayBuffer {
+  return Object.prototype.toString.call(value) === '[object ArrayBuffer]';
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
@@ -168,6 +183,7 @@ export class PrivateRecordingStorage {
     };
 
     try {
+      const bytes = await input.blob.arrayBuffer();
       const database = await this.open();
       const transaction = database.transaction(
         [BLOBS_STORE, METADATA_STORE],
@@ -175,7 +191,8 @@ export class PrivateRecordingStorage {
       );
       transaction.objectStore(BLOBS_STORE).put({
         id: metadata.id,
-        blob: input.blob,
+        bytes,
+        mimeType: metadata.mimeType,
       } satisfies BlobRecord);
       transaction.objectStore(METADATA_STORE).put(metadata);
       await transactionDone(transaction);
@@ -223,9 +240,22 @@ export class PrivateRecordingStorage {
           .get(id) as IDBRequest<RecordingMetadata | undefined>,
       );
       await transactionDone(transaction);
-      return blobRecord && metadata
-        ? { ...metadata, blob: blobRecord.blob }
-        : undefined;
+      if (!blobRecord || !metadata) return undefined;
+      if (isBlob(blobRecord.blob)) {
+        return { ...metadata, blob: blobRecord.blob };
+      }
+      if (isArrayBuffer(blobRecord.bytes)) {
+        return {
+          ...metadata,
+          blob: new Blob([blobRecord.bytes], {
+            type: blobRecord.mimeType || metadata.mimeType,
+          }),
+        };
+      }
+      throw new RecordingError(
+        'storage-failed',
+        'The stored recording data is unreadable.',
+      );
     } catch (error) {
       throw storageError(error);
     }
