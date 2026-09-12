@@ -31,8 +31,6 @@ export interface AppRideProps {
 
 type ConnectionState = 'online' | 'offline' | 'reconnecting';
 
-const controlStyle = { minHeight: 48 };
-
 function messageFor(error: unknown): string {
   if (error instanceof RideApiError || error instanceof Error) return error.message;
   return 'Unable to complete the ride request.';
@@ -311,24 +309,28 @@ export function AppRide({
   };
 
   return (
-    <section className="pudle-card pudle-ride" aria-labelledby="app-ride-title">
-      <header className="pudle-panel-header">
+    <section className="pudle-card pudle-ride app-ride" aria-labelledby="app-ride-title">
+      <header className="pudle-panel-header app-ride__masthead">
         <div>
           <p className="pudle-eyebrow">Private ride groups</p>
           <h1 id="app-ride-title">Ride with {currentUser.displayName}</h1>
         </div>
-        <span role="status" aria-live="polite">
+        <span
+          className={`pudle-status app-ride__connection app-ride__connection--${connection}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="pudle-status__dot" aria-hidden="true" />
           {connection === 'offline' ? 'Offline' : connection === 'reconnecting' ? 'Reconnecting…' : 'Online'}
         </span>
       </header>
 
       {error ? (
-        <div role="alert">
+        <div className="app-ride__alert" role="alert">
           <p>{error}</p>
           <button
             type="button"
             className="pudle-button pudle-button--secondary"
-            style={controlStyle}
             onClick={() => {
               const signal = accountAbortRef.current?.signal;
               if (signal) void loadGroups(signal, selectedGroupId ?? undefined);
@@ -340,170 +342,248 @@ export function AppRide({
       ) : null}
 
       {connection === 'offline' ? (
-        <p role="status">Messages are paused while offline. They will reconnect automatically.</p>
+        <p className="app-ride__network-note" role="status">
+          Messages are paused while offline. Reconnecting automatically.
+        </p>
       ) : null}
 
-      <form onSubmit={createGroup}>
-        <label className="pudle-field">
-          <span>New group name</span>
-          <input
-            value={groupName}
-            onChange={(event) => setGroupName(event.target.value)}
-            maxLength={80}
-            style={controlStyle}
-            required
-          />
-        </label>
-        <button
-          className="pudle-button pudle-button--primary"
-          style={controlStyle}
-          disabled={busy !== null || connection === 'offline'}
-        >
-          {busy === 'create-group' ? 'Creating…' : 'Create group'}
-        </button>
-      </form>
-
-      <form onSubmit={redeemInvite}>
-        <label className="pudle-field">
-          <span>Invite code</span>
-          <input
-            value={redeemToken}
-            onChange={(event) => setRedeemToken(event.target.value)}
-            maxLength={128}
-            autoComplete="off"
-            style={controlStyle}
-            required
-          />
-        </label>
-        <button
-          className="pudle-button pudle-button--secondary"
-          style={controlStyle}
-          disabled={busy !== null || connection === 'offline'}
-        >
-          {busy === 'redeem-invite' ? 'Joining…' : 'Join group'}
-        </button>
-      </form>
-
-      <section aria-labelledby="ride-groups-title">
-        <h2 id="ride-groups-title">Your groups</h2>
-        {loadingGroups ? <p role="status">Loading groups…</p> : groups.length === 0 ? (
-          <p>No groups yet. Create one or enter an invite code.</p>
-        ) : (
-          <ul>
-            {groups.map((group) => (
-              <li key={group.id}>
-                <button
-                  type="button"
-                  className="pudle-button pudle-button--quiet"
-                  style={controlStyle}
-                  aria-pressed={group.id === selectedGroupId}
-                  onClick={() => setSelectedGroupId(group.id)}
-                >
-                  {group.name} · {group.role}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {selectedGroup ? (
-        <section aria-labelledby="selected-ride-title">
-          <header>
-            <h2 id="selected-ride-title">{selectedGroup.name}</h2>
-            {selectedGroup.role === 'owner' ? (
-              <p>The group owner cannot leave this demo group.</p>
-            ) : (
-              <button
-                type="button"
-                className="pudle-button pudle-button--danger"
-                style={controlStyle}
-                disabled={busy !== null || connection === 'offline'}
-                onClick={leaveGroup}
-              >
-                {busy === 'leave-group' ? 'Leaving…' : 'Leave group'}
-              </button>
-            )}
-          </header>
-
-          {selectedGroup.role === 'owner' ? (
-            <form onSubmit={createInvite}>
+      {!selectedGroup ? (
+        <section className="app-ride__onboarding" aria-labelledby="ride-onboarding-title">
+          <div>
+            <p className="pudle-eyebrow">Get connected</p>
+            <h2 id="ride-onboarding-title">Start or join a ride</h2>
+            <p>Create a private group or use an invite code.</p>
+          </div>
+          <div className="app-ride__onboarding-forms">
+            <form className="app-ride__form" onSubmit={createGroup}>
               <label className="pudle-field">
-                <span>Email to invite</span>
+                <span>New group name</span>
                 <input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(event) => setInviteEmail(event.target.value)}
-                  maxLength={254}
-                  style={controlStyle}
+                  value={groupName}
+                  onChange={(event) => setGroupName(event.target.value)}
+                  maxLength={80}
+                  required
+                />
+              </label>
+              <button
+                className="pudle-button pudle-button--primary"
+                disabled={busy !== null || connection === 'offline'}
+              >
+                {busy === 'create-group' ? 'Creating…' : 'Create group'}
+              </button>
+            </form>
+
+            <form className="app-ride__form" onSubmit={redeemInvite}>
+              <label className="pudle-field">
+                <span>Invite code</span>
+                <input
+                  value={redeemToken}
+                  onChange={(event) => setRedeemToken(event.target.value)}
+                  maxLength={128}
+                  autoComplete="off"
                   required
                 />
               </label>
               <button
                 className="pudle-button pudle-button--secondary"
-                style={controlStyle}
                 disabled={busy !== null || connection === 'offline'}
               >
-                {busy === 'create-invite' ? 'Creating invite…' : 'Create invite'}
+                {busy === 'redeem-invite' ? 'Joining…' : 'Join group'}
               </button>
             </form>
-          ) : null}
+          </div>
+          <section className="app-ride__group-list" aria-labelledby="ride-groups-title">
+            <h3 id="ride-groups-title">Your groups</h3>
+            {loadingGroups ? <p role="status">Loading groups…</p> : groups.length === 0 ? (
+              <p>No groups yet. Create one or enter an invite code.</p>
+            ) : (
+              <ul>
+                {groups.map((group) => (
+                  <li key={group.id}>
+                    <button
+                      type="button"
+                      className="pudle-button pudle-button--quiet app-ride__group-button"
+                      aria-pressed={group.id === selectedGroupId}
+                      onClick={() => setSelectedGroupId(group.id)}
+                    >
+                      <span>{group.name}</span>
+                      <small>{group.role}</small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </section>
+      ) : null}
 
-          {inviteToken ? (
-            <div>
-              <label className="pudle-field">
-                <span>Invite code</span>
-                <input value={inviteToken} readOnly style={controlStyle} aria-describedby="invite-copy-status" />
-              </label>
-              <button
-                type="button"
-                className="pudle-button pudle-button--secondary"
-                style={controlStyle}
-                onClick={() => void copyInvite()}
-              >
-                Copy code
-              </button>
-              <p id="invite-copy-status" role="status">{copyStatus}</p>
-            </div>
-          ) : null}
+      {selectedGroup ? (
+        <section className="app-ride__conversation" aria-labelledby="selected-ride-title">
+          <header className="app-ride__conversation-header">
+            <p className="pudle-eyebrow">Active conversation</p>
+            <h2 id="selected-ride-title">{selectedGroup.name}</h2>
+            <p>Share short, observable road updates.</p>
+          </header>
 
-          <h3>Messages</h3>
-          {loadingMessages ? <p role="status">Loading messages…</p> : messages.length === 0 ? (
-            <p>No messages yet. Send the first short update.</p>
-          ) : (
-            <ol aria-label="Ride messages">
+          <div className="app-ride__message-region">
+            <h3 className="sr-only">Messages</h3>
+            {loadingMessages ? <p className="app-ride__empty" role="status">Loading messages…</p> : messages.length === 0 ? (
+              <p className="app-ride__empty">No updates yet. Send the first one.</p>
+            ) : (
+              <ol className="app-ride__messages" aria-label="Ride messages">
               {messages.map((message) => (
-                <li key={message.id}>
-                  <strong>{message.displayName}</strong>
-                  <p>{message.body}</p>
-                  <time dateTime={new Date(message.createdAt).toISOString()}>
-                    {new Date(message.createdAt).toLocaleTimeString()}
-                  </time>
-                </li>
+                  <li
+                    key={message.id}
+                    className={`app-ride__message${
+                      message.displayName === currentUser.displayName ? ' app-ride__message--own' : ''
+                    }`}
+                  >
+                    <strong className="app-ride__sender">{message.displayName}</strong>
+                    <p className="app-ride__message-body">{message.body}</p>
+                    <time
+                      className="app-ride__message-time"
+                      dateTime={new Date(message.createdAt).toISOString()}
+                    >
+                      {new Date(message.createdAt).toLocaleTimeString()}
+                    </time>
+                  </li>
               ))}
-            </ol>
-          )}
+              </ol>
+            )}
+          </div>
 
-          <form onSubmit={sendMessage}>
+          <form className="app-ride__composer" onSubmit={sendMessage}>
             <label className="pudle-field">
-              <span>Message your ride</span>
+              <span className="sr-only">Message your ride</span>
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 maxLength={1_000}
                 rows={2}
-                style={controlStyle}
+                placeholder="Share a short road update"
                 disabled={connection === 'offline'}
               />
             </label>
             <button
               className="pudle-button pudle-button--primary"
-              style={controlStyle}
               disabled={busy !== null || connection === 'offline' || !draft.trim()}
             >
               {busy === 'send-message' ? 'Sending…' : 'Send message'}
             </button>
           </form>
+
+          <details className="app-ride__management">
+            <summary>Manage ride groups</summary>
+            <div className="app-ride__management-body">
+              <section className="app-ride__group-list" aria-labelledby="ride-groups-title">
+                <h3 id="ride-groups-title">Switch group</h3>
+                <ul>
+                  {groups.map((group) => (
+                    <li key={group.id}>
+                      <button
+                        type="button"
+                        className="pudle-button pudle-button--quiet app-ride__group-button"
+                        aria-pressed={group.id === selectedGroupId}
+                        onClick={() => setSelectedGroupId(group.id)}
+                      >
+                        <span>{group.name}</span>
+                        <small>{group.role}</small>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+
+              <div className="app-ride__management-grid">
+                <form className="app-ride__form" onSubmit={createGroup}>
+                  <label className="pudle-field">
+                    <span>New group name</span>
+                    <input
+                      value={groupName}
+                      onChange={(event) => setGroupName(event.target.value)}
+                      maxLength={80}
+                      required
+                    />
+                  </label>
+                  <button
+                    className="pudle-button pudle-button--primary"
+                    disabled={busy !== null || connection === 'offline'}
+                  >
+                    {busy === 'create-group' ? 'Creating…' : 'Create group'}
+                  </button>
+                </form>
+
+                <form className="app-ride__form" onSubmit={redeemInvite}>
+                  <label className="pudle-field">
+                    <span>Invite code</span>
+                    <input
+                      value={redeemToken}
+                      onChange={(event) => setRedeemToken(event.target.value)}
+                      maxLength={128}
+                      autoComplete="off"
+                      required
+                    />
+                  </label>
+                  <button
+                    className="pudle-button pudle-button--secondary"
+                    disabled={busy !== null || connection === 'offline'}
+                  >
+                    {busy === 'redeem-invite' ? 'Joining…' : 'Join group'}
+                  </button>
+                </form>
+              </div>
+
+              {selectedGroup.role === 'owner' ? (
+                <>
+                  <form className="app-ride__form" onSubmit={createInvite}>
+                    <label className="pudle-field">
+                      <span>Email to invite</span>
+                      <input
+                        type="email"
+                        value={inviteEmail}
+                        onChange={(event) => setInviteEmail(event.target.value)}
+                        maxLength={254}
+                        required
+                      />
+                    </label>
+                    <button
+                      className="pudle-button pudle-button--secondary"
+                      disabled={busy !== null || connection === 'offline'}
+                    >
+                      {busy === 'create-invite' ? 'Creating invite…' : 'Create invite'}
+                    </button>
+                  </form>
+                  <p className="app-ride__management-note">The group owner cannot leave this demo group.</p>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="pudle-button pudle-button--danger"
+                  disabled={busy !== null || connection === 'offline'}
+                  onClick={leaveGroup}
+                >
+                  {busy === 'leave-group' ? 'Leaving…' : 'Leave group'}
+                </button>
+              )}
+
+              {inviteToken ? (
+                <div className="app-ride__invite">
+                  <label className="pudle-field">
+                    <span>Invite code</span>
+                    <input value={inviteToken} readOnly aria-describedby="invite-copy-status" />
+                  </label>
+                  <button
+                    type="button"
+                    className="pudle-button pudle-button--secondary"
+                    onClick={() => void copyInvite()}
+                  >
+                    Copy code
+                  </button>
+                  <p id="invite-copy-status" role="status">{copyStatus}</p>
+                </div>
+              ) : null}
+            </div>
+          </details>
         </section>
       ) : null}
     </section>
