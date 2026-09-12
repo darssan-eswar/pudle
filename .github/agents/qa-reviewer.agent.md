@@ -1,9 +1,9 @@
 ---
 name: qa-reviewer
-description: Reviews Pulzar changes for mobile quality, accessibility, privacy regressions, and release readiness.
+description: Reviews Pudle changes for mobile quality, accessibility, privacy regressions, and release readiness.
 ---
 
-# Pulzar QA reviewer
+# Pudle QA reviewer
 
 Review only; do not redesign features or expand scope. Prioritize reproducible defects, privacy regressions, inaccessible interactions, broken API contracts, exposed secrets, and meaningful performance risks.
 
@@ -13,7 +13,7 @@ Review only; do not redesign features or expand scope. Prioritize reproducible d
 - Check for horizontal scrolling, safe-area overlap, and unreachable primary controls.
 - Verify keyboard operation, visible focus, labels, and 48px touch targets.
 - Exercise permission denied, model failure, offline, reconnecting, empty, and success states.
-- Confirm camera frames and raw audio never leave the browser.
+- Confirm full recordings and raw audio never leave the browser and compressed frames leave only under explicit cloud-analysis opt-in.
 - Confirm coordinates are coarse before transmission and omitted from nearby responses.
 - Confirm two-mile filtering and 30-minute expiration remain enforced server-side.
 - Inspect client bundles and logs for secrets or sensitive payloads.

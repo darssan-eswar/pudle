@@ -1,4 +1,9 @@
-import { ensureDatabase, getD1 } from '@/db';
+import { getD1 } from '@/db';
+import { env } from 'cloudflare:workers';
+import { D1AuthStore } from '@/server/auth/d1-store';
+import { enforceRateLimit } from '@/server/auth/runtime';
+import { errorResponse, json, readJsonObject } from '@/server/http';
+import { requireMutationOrigin } from '@/server/security';
 
 const ALLOWED_TYPES = new Set([
   'road-hazard',
@@ -33,7 +38,6 @@ function distanceMiles(lat1: number, lon1: number, lat2: number, lon2: number) {
 }
 
 export async function GET(request: Request) {
-  await ensureDatabase();
   const url = new URL(request.url);
   const latitude = Number(url.searchParams.get('lat'));
   const longitude = Number(url.searchParams.get('lng'));
@@ -72,38 +76,53 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  await ensureDatabase();
-  const body = await request.json() as Record<string, unknown>;
-  const type = typeof body.type === 'string' ? body.type : '';
-  const latitude = Number(body.latitude);
-  const longitude = Number(body.longitude);
-  const confidence = Math.min(1, Math.max(0, Number(body.confidence) || 1));
-  const source = body.source === 'edge-ai' ? 'edge-ai' : 'manual';
+  try {
+    requireMutationOrigin(request, env.APP_ORIGIN);
+    const d1 = getD1();
+    await enforceRateLimit(request, new D1AuthStore(d1), 'events-create', 30, 60_000);
+    const body = await readJsonObject(request);
+    const type = typeof body.type === 'string' ? body.type : '';
+    const latitude = Number(body.latitude);
+    const longitude = Number(body.longitude);
+    const confidence = Math.min(1, Math.max(0, Number(body.confidence) || 1));
+    const source = body.source === 'edge-ai' ? 'edge-ai' : 'manual';
 
-  if (!ALLOWED_TYPES.has(type) || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    return Response.json({ error: 'Invalid road-event metadata.' }, { status: 400 });
+    if (!ALLOWED_TYPES.has(type) || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return json({ error: 'Invalid road-event metadata.' }, 400);
+    }
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      return json({ error: 'Invalid coordinates.' }, 400);
+    }
+
+    const now = Date.now();
+    const event = {
+      id: crypto.randomUUID(),
+      type,
+      latitude: Number(latitude.toFixed(3)),
+      longitude: Number(longitude.toFixed(3)),
+      confidence,
+      source,
+      createdAt: now,
+      expiresAt: now + 30 * 60 * 1000,
+    };
+
+    await d1.prepare(`INSERT INTO road_events
+      (id, type, latitude, longitude, confidence, source, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(event.id, event.type, event.latitude, event.longitude, event.confidence, event.source, event.createdAt, event.expiresAt)
+      .run();
+
+    return json({
+      event: {
+        id: event.id,
+        type: event.type,
+        confidence: event.confidence,
+        source: event.source,
+        createdAt: event.createdAt,
+        expiresAt: event.expiresAt,
+      },
+    }, 201);
+  } catch (error) {
+    return errorResponse(error);
   }
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-    return Response.json({ error: 'Invalid coordinates.' }, { status: 400 });
-  }
-
-  const now = Date.now();
-  const event = {
-    id: crypto.randomUUID(),
-    type,
-    latitude,
-    longitude,
-    confidence,
-    source,
-    createdAt: now,
-    expiresAt: now + 30 * 60 * 1000,
-  };
-
-  await getD1().prepare(`INSERT INTO road_events
-    (id, type, latitude, longitude, confidence, source, created_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(event.id, event.type, event.latitude, event.longitude, event.confidence, event.source, event.createdAt, event.expiresAt)
-    .run();
-
-  return Response.json({ event: { ...event, latitude: undefined, longitude: undefined } }, { status: 201 });
 }

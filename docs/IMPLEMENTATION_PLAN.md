@@ -7,7 +7,7 @@ Deliver a recording-ready, mobile-first Pudle demo with real authenticated persi
 ## Vertical slices
 
 1. **Foundation: identity and persistence**
-   - Rename product-facing Pulzar references to Pudle and Pudy.
+   - Rename product-facing references to Pudle and Pudy.
    - Add secure server sessions, users, recording metadata, analysis results, road events, acknowledgements, groups, memberships, messages, and idempotency records.
    - Generate and review D1 migrations.
    - Add a demo-only seed/reset workflow and two real demo accounts.

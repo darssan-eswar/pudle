@@ -1,6 +1,6 @@
 ---
 name: release-check
-description: Review a Pulzar change for privacy, mobile quality, and release readiness.
+description: Review a Pudle change for privacy, mobile quality, and release readiness.
 agent: qa-reviewer
 ---
 

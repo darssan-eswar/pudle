@@ -1,62 +1,93 @@
-# Pulzar
+# Pudle
 
-Pulzar turns a phone into a privacy-first road-intelligence node. The camera is processed in the browser, video never reaches the server, and only anonymous, coarse-location metadata is shared with drivers within two miles.
+Pudle (**Peer Updated Driving Logic Engine**) is a privacy-first road-intelligence app with the Pudy voice companion. The current MVP provides a mobile local camera scanner, manual road reports, nearby alerts, and a secure authentication/persistence foundation.
 
-## Working MVP
+## Current implementation
 
-- Live rear-camera capture on mobile browsers
-- On-device TensorFlow.js / COCO-SSD object detection
-- Anonymous road-hazard, reckless-driving, crash, and flooding reports
-- Live two-mile event feed backed by Cloudflare D1
-- 30-minute automatic event expiration
-- Coordinates rounded to roughly 110-meter precision before transmission
-- Voice query and spoken nearby-road summary using browser speech APIs
-- San Francisco demo mode when location access is unavailable
+- Live rear-camera preview and optional on-device TensorFlow.js / COCO-SSD detection
+- Manual and edge-assisted road-event metadata, rounded to three decimal places
+- D1-backed events limited to two miles and 30 minutes
+- Email/password accounts with PBKDF2-SHA-256 password hashes
+- Rotating opaque sessions in `Secure`, `HttpOnly`, `SameSite=Strict` cookies; only SHA-256 token hashes are stored
+- D1 contracts for recording metadata, opt-in analysis metadata, event acknowledgement/resolution, invite-only groups, messages, idempotency, rate limits, and retention
+- Pudy-labelled local demo query UI
 
-The current web transport is HTTPS. The same compact event envelope is intended to be bridged to Pulzar LoRaWAN gateways as the hardware network comes online.
+Camera recording, cloud frame analysis, group UI/messaging routes, and full Pudy voice behavior are planned but are **not implemented** in this slice.
 
 ## Privacy model
 
-Pulzar does not upload camera frames, retain video, detect license plates, identify drivers, or store a user account. A shared event contains only an event category, approximate coordinates, confidence/source labels, and creation/expiration times. Nearby-event responses omit event coordinates and return distance only.
+Pudle never performs face recognition, license-plate recognition, vehicle-owner identification, persistent tracking of other users, or accusations about intoxication, intent, or culpability. Full recordings and raw audio remain local.
 
-## Run locally
+Future cloud analysis may receive only bounded periodic compressed frames after a separate explicit opt-in and disclosure. Recording and cloud analysis must remain independently controlled. D1 stores accounts and metadata, not media blobs. Nearby-event responses omit coordinates.
+
+## Local setup
+
+Use Node.js 22.13 or newer:
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Open `http://localhost:3000`. Camera and location access require user permission. The app continues in a safe demo mode if either permission is declined.
+Configure the Cloudflare D1 binding as `DB`. Copy `.env.example` values into the runtime’s server environment; never expose them through client-prefixed variables.
+
+Apply generated migrations using the deployment environment’s Wrangler/D1 workflow. The schema source of truth is `db/schema.ts`; after changing it:
+
+```bash
+npm run db:generate
+npx wrangler d1 migrations apply <DATABASE_NAME> --local
+npx wrangler d1 migrations apply <DATABASE_NAME> --remote
+```
+
+Use only the command for the intended environment, and replace `<DATABASE_NAME>` with the configured D1 database name. Review every generated SQL migration before applying it. Never commit local Wrangler state or database contents.
+
+## Authentication API
+
+All mutation requests require:
+
+- `Content-Type: application/json` when a body is present
+- an `Origin` matching `APP_ORIGIN` (or the request origin when unset)
+- `X-Pudle-CSRF: 1`
+
+Endpoints:
+
+| Endpoint | Method | Behavior |
+|---|---|---|
+| `/api/auth/signup` | `POST` | Creates an account and rotates into a new session |
+| `/api/auth/signin` | `POST` | Returns a generic credential error and rotates existing sessions |
+| `/api/auth/session` | `GET` | Returns `{ "user": null }` or the minimum public user fields |
+| `/api/auth/signout` | `POST` | Invalidates the current token and clears the cookie |
+| `/api/demo/reset` | `POST` | Resets demo credentials only under the explicit demo gate |
+
+Clients never provide a trusted user ID. Server routes derive identity from the session cookie. Email is trimmed/lowercased, names and passwords are bounded, payloads are size/shape checked, and auth mutations are rate-limited.
+
+## Demo accounts
+
+The reset endpoint creates two clearly labelled accounts using normal password hashes and sessions:
+
+- `driver@demo.pudle.local` — **Demo Driver**
+- `passenger@demo.pudle.local` — **Demo Passenger**
+
+Set `DEMO_MODE=true`, `DEMO_RESET_SECRET`, `DEMO_DRIVER_PASSWORD`, and `DEMO_PASSENGER_PASSWORD`, then send a same-origin `POST /api/demo/reset` with `X-Pudle-CSRF: 1` and the reset secret in `X-Demo-Reset-Secret`. Passwords are runtime configuration and are not committed. Outside explicit demo mode the endpoint returns 404.
 
 ## Project structure
 
 - `app/` contains the Vinext UI and server routes.
-- `app/api/events/route.ts` validates reports and serves fresh events within two miles.
-- `db/` contains the D1 access layer and Drizzle schema.
-- `drizzle/` contains generated migrations; do not edit generated metadata by hand.
-- `docs/` contains product scope and roadmap documentation.
-
-When `db/schema.ts` changes, run `npm run db:generate` and review the generated migration. Local D1 and Wrangler state is ignored and must not be committed.
+- `server/` contains validation, cryptography, session, authorization, rate-limit, and retention helpers.
+- `db/schema.ts` defines the D1 schema.
+- `drizzle/` contains generated migrations.
+- `tests/` contains dependency-seamed Node tests that do not require live D1 or secrets.
+- `docs/` distinguishes current behavior from roadmap capabilities.
 
 ## Validate
 
 ```bash
-npm run db:generate
 npm run lint
 npm run typecheck
-npm run test --if-present
+npm test
 npm run build
 ```
 
-The repository does not yet define an automated test script. CI runs tests automatically once a `test` script is added.
-
 ## Stack
 
-- Vinext / React / TypeScript
-- TensorFlow.js and COCO-SSD for browser-side inference
-- Cloudflare D1 for short-lived metadata
-- Web Speech APIs for the MVP voice interface
-- GitHub Copilot project instructions in `.github/copilot-instructions.md`
-- Scoped Copilot agents and reusable prompts in `.github/agents/` and `.github/prompts/`
-
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the product stages and contest demo script.
+Vinext, React, TypeScript, Cloudflare D1, Drizzle ORM, Web Crypto, TensorFlow.js, and COCO-SSD.

@@ -282,9 +282,9 @@ export default function Home() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#main-content" aria-label="Pulzar home">
+        <a className="brand" href="#main-content" aria-label="Pudle home">
           <span className="brand-mark" aria-hidden="true"><span /></span>
-          <span>Pulzar</span>
+          <span>Pudle</span>
         </a>
         <div className="privacy-meter" aria-label="Privacy is on. Video sent: zero kilobytes.">
           <ShieldIcon />
@@ -301,7 +301,7 @@ export default function Home() {
 
       <div className="dashboard" id="main-content">
         <section className="camera-card" aria-labelledby="camera-heading">
-          <h1 className="sr-only" id="camera-heading">Pulzar local road scanner</h1>
+          <h1 className="sr-only" id="camera-heading">Pudle local road scanner</h1>
           <div className="camera-stage">
             <div className="demo-road" aria-hidden="true">
               <span className="road-line road-line-one" />
@@ -373,7 +373,7 @@ export default function Home() {
             </button>
             <button ref={assistantButtonRef} className="secondary-action" type="button" onClick={() => setAssistantOpen((open) => !open)} aria-expanded={assistantOpen}>
               <span className="action-icon assistant-icon" aria-hidden="true">⌁</span>
-              <span><strong>Ask Pulzar</strong><small>Local demo answers · no mic</small></span>
+              <span><strong>Ask Pudy</strong><small>Local demo answers · no mic</small></span>
               <Chevron open={assistantOpen} />
             </button>
           </div>
@@ -394,7 +394,7 @@ export default function Home() {
 
           {assistantOpen && (
             <div className="expansion-panel assistant-panel">
-              <div className="panel-heading"><h2>Ask without recording</h2><button type="button" onClick={() => { setAssistantOpen(false); window.requestAnimationFrame(() => assistantButtonRef.current?.focus()); }} aria-label="Close Ask Pulzar">Close</button></div>
+              <div className="panel-heading"><h2>Ask Pudy without recording</h2><button type="button" onClick={() => { setAssistantOpen(false); window.requestAnimationFrame(() => assistantButtonRef.current?.focus()); }} aria-label="Close Ask Pudy">Close</button></div>
               <div className="query-row" aria-label="Example questions">
                 <button type="button" onClick={() => setAssistantAnswer(assistantAnswers.ahead)}>What&apos;s ahead?</button>
                 <button type="button" onClick={() => setAssistantAnswer(assistantAnswers.route)}>Route summary</button>
