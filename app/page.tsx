@@ -12,9 +12,7 @@ import {
   ConnectionStatusBadge,
   PudleButton,
   PudleCreateAccountPanel,
-  PudleEmptyState,
   PudlePrivacyNotice,
-  PudleProfilePanel,
   PudleShell,
   PudleSignInPanel,
   PudleStatusBadge,
@@ -26,6 +24,7 @@ import {
   type AppRecordingHandle,
   type PudyAssistantHandle,
 } from '@/components/app';
+import { AppRide } from '@/components/app/AppRide';
 import { RecordingAccountSession } from '@/lib/client/recording';
 import {
   authApi,
@@ -195,55 +194,53 @@ function AuthenticatedApp({
       ) : null}
 
       {activeSection === 'ride' ? (
-        <section className="pudle-card" data-app-ride-slot>
-          <p className="pudle-eyebrow">AppRide integration slot</p>
-          <h1>Ride</h1>
-          <PudleEmptyState
-            title="Ride integration pending"
-            description="The coordinated AppRide component will provide nearby events, confirmed reports, groups, and messages here."
-          />
-        </section>
+        <AppRide
+          currentUser={{ id: user.id, displayName: user.displayName }}
+        />
       ) : null}
 
       {activeSection === 'profile' ? (
-        <PudleProfilePanel
-          displayName={user.displayName}
-          email={user.email}
-          signingOut={signingOut}
-          onSignOut={() => void signOut()}
-          preferences={[
-            {
-              id: 'local-media',
-              label: 'Local-only media',
-              description: 'Required. Camera frames and recordings are never uploaded.',
-              checked: true,
-              disabled: true,
-              onChange: () => undefined,
-            },
-            {
-              id: 'pudy',
-              label: 'Pudy foreground voice',
-              description: 'Browser vendor cloud processing may occur only after Listen is tapped.',
-              checked: assistantEnabled,
-              onChange: setAssistantEnabled,
-            },
-            {
-              id: 'cloud',
-              label: 'Cloud analysis',
-              description: 'Managed separately in Drive with explicit frame-analysis consent.',
-              checked: false,
-              disabled: true,
-              onChange: () => undefined,
-            },
-          ]}
-          accountActions={
-            <>
-              <PudlePrivacyNotice title="Account-scoped local storage">
-                This browser keeps a separate recording account session for the stable server identity {user.id.slice(0, 8)}….
-              </PudlePrivacyNotice>
-            </>
-          }
-        />
+        <div className="pudle-profile">
+          <section className="pudle-card" aria-labelledby="app-profile-title">
+            <p className="pudle-eyebrow">Profile</p>
+            <h1 id="app-profile-title">{user.displayName}</h1>
+            <p className="pudle-muted">{user.email}</p>
+            <PudlePrivacyNotice title="Account-scoped local storage">
+              This browser keeps a separate recording account session for the stable server identity {user.id.slice(0, 8)}….
+            </PudlePrivacyNotice>
+            <PudleButton variant="secondary" loading={signingOut} onClick={() => void signOut()}>
+              Sign out
+            </PudleButton>
+          </section>
+
+          <section className="pudle-card" aria-labelledby="app-privacy-title">
+            <p className="pudle-eyebrow">Your controls</p>
+            <h2 id="app-privacy-title">Privacy</h2>
+            <PudlePrivacyNotice title="Recording media stays local">
+              Full recordings and raw recording audio never leave this browser. Cloud analysis can send only periodic compressed frames after separate consent. Browser speech recognition may send foreground microphone audio to the browser vendor after Listen is tapped.
+            </PudlePrivacyNotice>
+            <div className="pudle-preferences">
+              <label className="pudle-toggle">
+                <span>
+                  <strong>Pudy foreground voice</strong>
+                  <small>Browser vendor cloud processing may occur only after Listen is tapped.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={assistantEnabled}
+                  onChange={(event) => setAssistantEnabled(event.target.checked)}
+                />
+              </label>
+              <label className="pudle-toggle">
+                <span>
+                  <strong>Cloud analysis</strong>
+                  <small>Managed independently in Drive with explicit periodic-frame consent.</small>
+                </span>
+                <input type="checkbox" checked={false} disabled readOnly />
+              </label>
+            </div>
+          </section>
+        </div>
       ) : null}
 
       <span className="sr-only" aria-live="polite">

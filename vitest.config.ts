@@ -10,9 +10,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: [
-      'lib/client/app/**/*.test.ts',
       'lib/client/recording/**/*.test.{ts,tsx}',
-      'components/app/**/*.test.tsx',
       'components/recording/**/*.test.tsx',
       'lib/client/app/**/*.test.{ts,tsx}',
       'components/app/**/*.test.tsx',
