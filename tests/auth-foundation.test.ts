@@ -292,6 +292,57 @@ test('JSON parser rejects invalid shape and oversized bodies', async () => {
   );
 });
 
+test('JSON parser rejects an oversized stream without Content-Length', async () => {
+  const request = new Request('https://pudle.test/api', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"value":"'));
+        controller.enqueue(new TextEncoder().encode('too large"}'));
+      },
+    }),
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+  await expectHttpError(() => readJsonObject(request, 8), 413);
+});
+
+test('JSON parser rejects a body larger than its understated Content-Length', async () => {
+  const request = new Request('https://pudle.test/api', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'content-length': '2' },
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"value":"too large"}'));
+      },
+    }),
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+  await expectHttpError(() => readJsonObject(request, 8), 413);
+});
+
+test('bounded request reading cancels the source immediately after crossing the byte cap', async () => {
+  let cancelled = false;
+  let pulls = 0;
+  const request = new Request('https://pudle.test/api', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array(6));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }),
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+  await expectHttpError(() => readJsonObject(request, 8), 413);
+  assert.equal(cancelled, true);
+  assert.equal(pulls, 2);
+});
+
 test('mutation origin and CSRF header are both required', () => {
   const valid = new Request('https://pudle.test/api/auth/signin', {
     method: 'POST',

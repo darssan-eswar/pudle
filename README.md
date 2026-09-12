@@ -9,16 +9,21 @@ Pudle (**Peer Updated Driving Logic Engine**) is a privacy-first road-intelligen
 - D1-backed events limited to two miles and 30 minutes
 - Email/password accounts with PBKDF2-SHA-256 password hashes
 - Rotating opaque sessions in `Secure`, `HttpOnly`, `SameSite=Strict` cookies; only SHA-256 token hashes are stored
-- D1 contracts for recording metadata, opt-in analysis metadata, event acknowledgement/resolution, invite-only groups, messages, idempotency, rate limits, and retention
+- Owner-isolated D1 recording metadata APIs (media is never accepted or stored)
+- Explicitly opted-in, bounded still-frame road analysis through the server-only Gemini REST API
+- Strict analysis output validation, per-user/IP rate limits, idempotency, recoverable processing leases, timeout, bounded transient retry, and 30-minute logical result retention
+- D1 contracts for event acknowledgement/resolution, invite-only groups, messages, idempotency, rate limits, and retention
 - Pudy-labelled local demo query UI
 
-Camera recording, cloud frame analysis, group UI/messaging routes, and full Pudy voice behavior are planned but are **not implemented** in this slice.
+Camera recording in the client, group UI/messaging routes, and full Pudy voice behavior remain outside this backend slice.
 
 ## Privacy model
 
 Pudle never performs face recognition, license-plate recognition, vehicle-owner identification, persistent tracking of other users, or accusations about intoxication, intent, or culpability. Full recordings and raw audio remain local.
 
-Future cloud analysis may receive only bounded periodic compressed frames after a separate explicit opt-in and disclosure. Recording and cloud analysis must remain independently controlled. D1 stores accounts and metadata, not media blobs. Nearby-event responses omit coordinates.
+Cloud analysis accepts only one JPEG/WebP still per request after a separate explicit opt-in. The total raw request is capped at 512KB, each dimension is capped at 1920px, and the server enforces at least five seconds between accepted frames per user. Video, audio, full recordings, and media blobs are rejected or never accepted. Frame bytes live only in request/provider-call memory and are not persisted by Pudle; application retention for frames is zero after processing. D1 job/result metadata becomes unavailable through the application after 30 minutes, and recording metadata after 24 hours. Physical deletion is opportunistic on relevant API traffic because this deployment has no scheduled cleanup handler; it is not guaranteed at the exact logical-expiry instant. Nearby-event responses omit coordinates.
+
+Opted-in frames are sent by the server to the configured Google Gemini API and are then subject to Google's current Gemini API terms and the billing/account configuration. Under Google's terms effective March 23, 2026, unpaid services may use submitted content and generated responses to improve products and may involve human review; paid services state that prompts and responses are not used to improve products, but are logged for a limited period for abuse prevention and may be processed or cached where Google or its agents operate. Pudle cannot promise provider-side deletion timing. Review the current [Gemini API terms](https://ai.google.dev/gemini-api/terms) before enabling this feature, use a suitable paid account where required, and do not submit sensitive content.
 
 ## Local setup
 
@@ -30,6 +35,8 @@ npm run dev
 ```
 
 Configure the Cloudflare D1 binding as `DB`. Copy `.env.example` values into the runtime’s server environment; never expose them through client-prefixed variables.
+
+`GEMINI_API_KEY` is optional and server-only. With no key, `GET /api/analysis/status` reports `configured: false` and analysis returns `provider_unconfigured`; it never presents a fixture as live output. `GEMINI_MODEL` defaults to `gemini-3.8-flash`. Live provider verification remains blocked until a valid key and applicable provider account are supplied.
 
 Apply generated migrations using the deployment environment’s Wrangler/D1 workflow. The schema source of truth is `db/schema.ts`; after changing it:
 
@@ -60,6 +67,35 @@ Endpoints:
 | `/api/demo/reset` | `POST` | Resets demo credentials only under the explicit demo gate |
 
 Clients never provide a trusted user ID. Server routes derive identity from the session cookie. Email is trimmed/lowercased, names and passwords are bounded, and payloads are size/shape checked. Signup, sign-in, event creation, and enabled demo-reset attempts are rate-limited. Sign-out is deliberately not rate-limited so a client can always invalidate its session and clear its cookie.
+
+## Recording metadata API
+
+All endpoints require an authenticated server-verified session. Mutations also require the same Origin and CSRF headers as authentication mutations.
+
+| Endpoint | Method | Behavior |
+|---|---|---|
+| `/api/recordings?limit=30` | `GET` | Lists up to 100 unexpired metadata records owned by the caller |
+| `/api/recordings` | `POST` | Creates metadata from `clientRecordingId`, `durationMs`, `mimeType`, `byteLength`, and `capturedAt` |
+| `/api/recordings/:id` | `GET` | Gets one caller-owned metadata record |
+| `/api/recordings/:id` | `PATCH` | Updates only `durationMs` and/or `byteLength` |
+| `/api/recordings/:id` | `DELETE` | Deletes one caller-owned metadata record and returns 204 |
+
+Only `video/webm` and `video/mp4` labels are accepted as metadata. These JSON endpoints reject unknown fields, including media payloads. Missing and other-user records both return 404.
+
+## Cloud analysis API
+
+`GET /api/analysis/status` requires authentication and returns only `{ configured, provider, model }`; it never returns a credential.
+
+`POST /api/analysis` requires authentication, mutation Origin/CSRF checks, and:
+
+- `Content-Type: image/jpeg` or `image/webp`, with exactly one raw still-image body
+- actual body no larger than 512KB (`Content-Length`, when supplied, is only an early rejection hint)
+- `X-Pudle-Cloud-Analysis-Consent: true`
+- `X-Pudle-Captured-At: <Unix milliseconds>` no older than five minutes or over 30 seconds in the future
+- `Idempotency-Key: <8–128 visible ASCII characters>`
+- optional `X-Pudle-Recording-Id` for caller-owned metadata
+
+Success returns `{ jobId, result }`, where `result` has deterministic server-derived `summary` and `uncertainty`, allowlisted `observations`, bounded `confidence`, `source`, `model`, `capturedAt`, and `analyzedAt`. Provider-authored free-form text is neither returned nor persisted. Errors distinguish `provider_unconfigured`, `provider_timeout`, `provider_quota`, `provider_error`, and `malformed_provider_response`. Completed/error responses are replayed for the same user/key with `Idempotency-Replayed: true`. Analysis is limited to 12 requests/user/minute, 30 requests/IP/minute, one live leased job/user, and one accepted frame/user/five seconds. A dead worker's 30-second processing lease is reclaimed independently of the 30-minute result/idempotency retention window.
 
 ## Demo accounts
 
