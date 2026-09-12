@@ -17,13 +17,19 @@ import {
 
 type LocationState =
   | { status: 'unsupported' | 'idle' | 'requesting' | 'denied' | 'unavailable'; coordinates: null; message: string }
-  | { status: 'granted'; coordinates: EventCoordinates; message: string };
+  | { status: 'granted'; coordinates: EventCoordinates; mode: 'device' | 'demo'; message: string };
+
+export const DEMO_EVENT_COORDINATES: EventCoordinates = {
+  latitude: 40.713,
+  longitude: -74.006,
+};
 
 export interface NearbyEventsProps {
   active: boolean;
   online: boolean;
   reconnecting?: boolean;
   currentUserId: string;
+  demoModeEnabled?: boolean;
   preparedByPudy: boolean;
   onPreparedHandled: () => void;
   onNearbyLabelsChange: (labels: string[]) => void;
@@ -65,11 +71,12 @@ export function NearbyEvents({
   online,
   reconnecting = false,
   currentUserId,
+  demoModeEnabled = false,
   preparedByPudy,
   onPreparedHandled,
   onNearbyLabelsChange,
   api: suppliedApi,
-  pollIntervalMs = 5_000,
+  pollIntervalMs = 4_000,
 }: NearbyEventsProps) {
   const api = useMemo(() => suppliedApi ?? createEventsApi(), [suppliedApi]);
   const [location, setLocation] = useState<LocationState>(initialLocation);
@@ -80,8 +87,6 @@ export function NearbyEvents({
   const [reviewing, setReviewing] = useState(false);
   const [mutation, setMutation] = useState<{ action: 'create' | 'ack' | 'resolve'; eventId?: string; key: string } | null>(null);
   const [mutationError, setMutationError] = useState('');
-  const [ownedIds, setOwnedIds] = useState<Set<string>>(() => new Set());
-  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(() => new Set());
   const mutationController = useRef<AbortController | undefined>(undefined);
   const pollRef = useRef<NearbyPollController | undefined>(undefined);
 
@@ -96,8 +101,6 @@ export function NearbyEvents({
     mutationController.current?.abort();
     queueMicrotask(() => {
       setEvents([]);
-      setOwnedIds(new Set());
-      setAcknowledgedIds(new Set());
       setMutation(null);
       setMutationError('');
     });
@@ -154,11 +157,21 @@ export function NearbyEvents({
       ({ coords }) => setLocation({
         status: 'granted',
         coordinates: { latitude: coords.latitude, longitude: coords.longitude },
+        mode: 'device',
         message: 'Approximate location is on. Coordinates are rounded before sharing.',
       }),
       (error) => setLocation(locationError(error)),
       { enableHighAccuracy: false, maximumAge: 60_000, timeout: 10_000 },
     );
+  }
+
+  function useDemoArea() {
+    setLocation({
+      status: 'granted',
+      coordinates: DEMO_EVENT_COORDINATES,
+      mode: 'demo',
+      message: 'Demo area is on. Pudle is using a fixed coarse test location, not your device GPS.',
+    });
   }
 
   function disableLocation() {
@@ -182,16 +195,19 @@ export function NearbyEvents({
     setMutationError('');
     try {
       if (pending.action === 'create') {
-        const created = await api.create({
+        await api.create({
           type: reportType,
           ...location.coordinates,
         }, pending.key, controller.signal);
-        setOwnedIds((current) => new Set(current).add(created.id));
         setReviewing(false);
         onPreparedHandled();
       } else if (pending.action === 'ack' && pending.eventId) {
         await api.acknowledge(pending.eventId, pending.key, controller.signal);
-        setAcknowledgedIds((current) => new Set(current).add(pending.eventId!));
+        setEvents((current) => current.map((event) =>
+          event.id === pending.eventId
+            ? { ...event, acknowledgedByMe: true }
+            : event,
+        ));
       } else if (pending.action === 'resolve' && pending.eventId) {
         await api.resolve(pending.eventId, pending.key, controller.signal);
         setEvents((current) => {
@@ -226,7 +242,9 @@ export function NearbyEvents({
           <h2 id="nearby-title">What drivers observed</h2>
         </div>
         <PudleStatusBadge tone={location.status === 'granted' ? 'positive' : location.status === 'denied' ? 'danger' : 'neutral'}>
-          {location.status === 'granted' ? 'Location on' : location.status}
+          {location.status === 'granted'
+            ? location.mode === 'demo' ? 'Demo area' : 'Location on'
+            : location.status}
         </PudleStatusBadge>
       </header>
 
@@ -237,6 +255,12 @@ export function NearbyEvents({
           <PudleButton onClick={requestLocation}>
             {location.status === 'denied' ? 'Try location again' : 'Share approximate location'}
           </PudleButton>
+          {demoModeEnabled ? (
+            <div className="pudle-demo-location">
+              <PudleButton variant="secondary" onClick={useDemoArea}>Use demo area</PudleButton>
+              <small>Fixed coarse test area. Device location permission is not requested.</small>
+            </div>
+          ) : null}
         </>
       ) : null}
       {location.status === 'requesting' ? <p role="status">Requesting location permission…</p> : null}
@@ -286,8 +310,6 @@ export function NearbyEvents({
                 : (
                   <ul className="pudle-event-list">
                     {events.map((event) => {
-                      const owned = ownedIds.has(event.id);
-                      const acknowledged = acknowledgedIds.has(event.id);
                       return (
                         <li className="pudle-event-card" key={event.id}>
                           <div className="pudle-event-card__topline">
@@ -298,12 +320,12 @@ export function NearbyEvents({
                           <div className="pudle-event-controls">
                             <PudleButton
                               variant="secondary"
-                              disabled={acknowledged || mutation?.eventId === event.id}
+                              disabled={event.acknowledgedByMe || mutation?.eventId === event.id}
                               onClick={() => beginMutation('ack', event.id)}
                             >
-                              {acknowledged ? 'Acknowledged' : 'Acknowledge'}
+                              {event.acknowledgedByMe ? 'Acknowledged' : 'Acknowledge'}
                             </PudleButton>
-                            {owned ? (
+                            {event.canResolve ? (
                               <PudleButton
                                 variant="quiet"
                                 disabled={mutation?.eventId === event.id}

@@ -7,6 +7,9 @@ export const APP_ENDPOINTS = {
     signUp: '/api/auth/signup',
     signOut: '/api/auth/signout',
   },
+  demo: {
+    status: '/api/demo/status',
+  },
   recordings: {
     collection: '/api/recordings',
     item: (id: string) => `/api/recordings/${encodeURIComponent(id)}`,
@@ -144,6 +147,15 @@ export const authApi = {
   },
   signOut(): Promise<{ signedOut: true }> {
     return mutation(APP_ENDPOINTS.auth.signOut);
+  },
+};
+
+export const demoApi = {
+  status(): Promise<{ enabled: boolean }> {
+    return fetch(APP_ENDPOINTS.demo.status, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    }).then(readResponse<{ enabled: boolean }>);
   },
 };
 

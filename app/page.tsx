@@ -30,6 +30,7 @@ import { RecordingAccountSession } from '@/lib/client/recording';
 import {
   authApi,
   authReducer,
+  demoApi,
   disposeLocalSession,
   initialAuthState,
   PUDLE_SESSION_EXPIRED_EVENT,
@@ -66,6 +67,7 @@ function AuthenticatedApp({
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
   const [assistantEnabled, setAssistantEnabled] = useState(true);
+  const [demoModeEnabled, setDemoModeEnabled] = useState(false);
 
   const account = useMemo(
     () => new RecordingAccountSession({ ownerId: user.id }),
@@ -85,6 +87,20 @@ function AuthenticatedApp({
     return () => {
       window.removeEventListener('offline', offline);
       window.removeEventListener('online', online);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void demoApi.status()
+      .then(({ enabled }) => {
+        if (active) setDemoModeEnabled(enabled);
+      })
+      .catch((error) => {
+        console.warn('Pudle could not read demo mode status.', error);
+      });
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -205,6 +221,7 @@ function AuthenticatedApp({
             online={network === 'online'}
             reconnecting={network === 'reconnecting'}
             currentUserId={user.id}
+            demoModeEnabled={demoModeEnabled}
             preparedByPudy={reportPrepared}
             onPreparedHandled={() => setReportPrepared(false)}
             onNearbyLabelsChange={setNearbyLabels}

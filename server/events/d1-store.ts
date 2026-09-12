@@ -1,4 +1,4 @@
-import type { EventRecord, EventStore } from './service';
+import type { EventRecord, EventStore, NearbyEventRecord } from './service';
 
 type EventRow = {
   id: string;
@@ -12,9 +12,10 @@ type EventRow = {
   created_at: number;
   expires_at: number;
   resolved_at: number | null;
+  acknowledged_by_me: number;
 };
 
-function fromRow(row: EventRow): EventRecord {
+function fromRow(row: EventRow): NearbyEventRecord {
   return {
     id: row.id,
     userId: row.user_id,
@@ -27,6 +28,7 @@ function fromRow(row: EventRow): EventRecord {
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     resolvedAt: row.resolved_at,
+    acknowledgedByMe: row.acknowledged_by_me === 1,
   };
 }
 
@@ -56,10 +58,16 @@ export class D1EventStore implements EventStore {
     ]);
   }
 
-  async nearby(latitude: number, longitude: number, since: number, now: number) {
+  async nearby(latitude: number, longitude: number, since: number, now: number, userId: string) {
     const latitudeWindow = 2 / 69;
     const longitudeWindow = 2 / Math.max(1, 69 * Math.cos((latitude * Math.PI) / 180));
-    const select = `SELECT id, user_id, type, latitude, longitude, confidence, source, direction, created_at, expires_at, resolved_at
+    const select = `SELECT road_events.id, road_events.user_id, road_events.type, road_events.latitude,
+         road_events.longitude, road_events.confidence, road_events.source, road_events.direction,
+         road_events.created_at, road_events.expires_at, road_events.resolved_at,
+         EXISTS(
+           SELECT 1 FROM event_acknowledgements
+           WHERE event_id = road_events.id AND user_id = ? AND status = 'acknowledged' AND expires_at > ?
+         ) AS acknowledged_by_me
        FROM road_events
        WHERE created_at > ? AND expires_at > ? AND resolved_at IS NULL
          AND latitude BETWEEN ? AND ?`;
@@ -68,16 +76,16 @@ export class D1EventStore implements EventStore {
     let statement;
     if (latitude + latitudeWindow >= 90 || latitude - latitudeWindow <= -90) {
       statement = this.d1.prepare(`${select} ORDER BY created_at DESC LIMIT 500`)
-        .bind(since, now, latitude - latitudeWindow, latitude + latitudeWindow);
+        .bind(userId, now, since, now, latitude - latitudeWindow, latitude + latitudeWindow);
     } else if (lowerLongitude < -180) {
       statement = this.d1.prepare(`${select} AND (longitude >= ? OR longitude <= ?) ORDER BY created_at DESC LIMIT 100`)
-        .bind(since, now, latitude - latitudeWindow, latitude + latitudeWindow, lowerLongitude + 360, upperLongitude);
+        .bind(userId, now, since, now, latitude - latitudeWindow, latitude + latitudeWindow, lowerLongitude + 360, upperLongitude);
     } else if (upperLongitude > 180) {
       statement = this.d1.prepare(`${select} AND (longitude >= ? OR longitude <= ?) ORDER BY created_at DESC LIMIT 100`)
-        .bind(since, now, latitude - latitudeWindow, latitude + latitudeWindow, lowerLongitude, upperLongitude - 360);
+        .bind(userId, now, since, now, latitude - latitudeWindow, latitude + latitudeWindow, lowerLongitude, upperLongitude - 360);
     } else {
       statement = this.d1.prepare(`${select} AND longitude BETWEEN ? AND ? ORDER BY created_at DESC LIMIT 100`)
-        .bind(since, now, latitude - latitudeWindow, latitude + latitudeWindow, lowerLongitude, upperLongitude);
+        .bind(userId, now, since, now, latitude - latitudeWindow, latitude + latitudeWindow, lowerLongitude, upperLongitude);
     }
     const result = await statement.all<EventRow>();
     return result.results.map(fromRow);

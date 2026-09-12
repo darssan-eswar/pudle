@@ -31,10 +31,14 @@ export type EventRecord = {
   resolvedAt: number | null;
 };
 
+export type NearbyEventRecord = EventRecord & {
+  acknowledgedByMe: boolean;
+};
+
 export type EventStore = {
   findIdempotent(userId: string, scope: string, keyHash: string, now: number): Promise<{ status: number; body: string } | null>;
   saveEvent(event: EventRecord, keyHash: string, responseBody: string, now: number, idempotencyExpiresAt: number): Promise<void>;
-  nearby(latitude: number, longitude: number, since: number, now: number): Promise<EventRecord[]>;
+  nearby(latitude: number, longitude: number, since: number, now: number, userId: string): Promise<NearbyEventRecord[]>;
   acknowledge(eventId: string, userId: string, now: number): Promise<'created' | 'existing' | 'missing'>;
   resolve(eventId: string, userId: string, now: number): Promise<'resolved' | 'existing' | 'forbidden' | 'missing'>;
 };
@@ -108,7 +112,7 @@ function coarseDistanceBand(distance: number) {
   return 'within-two-miles';
 }
 
-function publicEvent(event: EventRecord, distance?: number) {
+function publicEvent(event: EventRecord, distance?: number, viewerId?: string) {
   return {
     id: event.id,
     type: event.type,
@@ -118,6 +122,14 @@ function publicEvent(event: EventRecord, distance?: number) {
     createdAt: event.createdAt,
     expiresAt: event.expiresAt,
     ...(distance === undefined ? {} : { distanceBand: coarseDistanceBand(distance) }),
+    ...(viewerId === undefined
+      ? {}
+      : {
+          canResolve: event.userId === viewerId,
+          acknowledgedByMe: 'acknowledgedByMe' in event
+            ? event.acknowledgedByMe
+            : false,
+        }),
   };
 }
 
@@ -140,7 +152,7 @@ export function createEventService(store: EventStore, options?: { now?: () => nu
         expiresAt: timestamp + EVENT_TTL_MS,
         resolvedAt: null,
       };
-      const response = { event: publicEvent(event) };
+      const response = { event: publicEvent(event, undefined, userId) };
       try {
         await store.saveEvent(
           event,
@@ -157,7 +169,7 @@ export function createEventService(store: EventStore, options?: { now?: () => nu
       return { status: 201, body: response };
     },
 
-    async nearby(latitudeValue: unknown, longitudeValue: unknown) {
+    async nearby(latitudeValue: unknown, longitudeValue: unknown, userId: string) {
       const coordinates = validateCoordinates(latitudeValue, longitudeValue);
       const coarseCoordinates = {
         latitude: Number(coordinates.latitude.toFixed(2)),
@@ -169,6 +181,7 @@ export function createEventService(store: EventStore, options?: { now?: () => nu
         coarseCoordinates.longitude,
         timestamp - EVENT_TTL_MS,
         timestamp,
+        userId,
       );
       return candidates
         .map((event) => ({
@@ -188,7 +201,7 @@ export function createEventService(store: EventStore, options?: { now?: () => nu
           && distance <= EVENT_RADIUS_MILES)
         .sort((a, b) => a.distance - b.distance || b.event.createdAt - a.event.createdAt)
         .slice(0, 30)
-        .map(({ event, distance }) => publicEvent(event, distance));
+        .map(({ event, distance }) => publicEvent(event, distance, userId));
     },
 
     async acknowledge(eventId: string, userId: string) {

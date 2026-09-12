@@ -52,8 +52,13 @@ function RecordingsLibraryView({
   const [playbackUrl, setPlaybackUrl] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [pendingDelete, setPendingDelete] = useState<RecordingMetadata>();
   const playbackUrlRef = useRef<string | undefined>(undefined);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const cancelDeleteRef = useRef<HTMLButtonElement | null>(null);
   const titleId = useId();
+  const deleteTitleId = useId();
+  const deleteDescriptionId = useId();
 
   const loadLibrary = useCallback(async () => {
     setLoading(true);
@@ -160,14 +165,6 @@ function RecordingsLibraryView({
   };
 
   const deleteRecording = async (metadata: RecordingMetadata) => {
-    const confirmed = await (confirmDelete?.(metadata) ??
-      window.confirm(
-        `Delete "${metadata.name}" from this device? This cannot be undone.`,
-      ));
-    if (!confirmed) {
-      return;
-    }
-
     setError(undefined);
     try {
       await storage.delete(metadata.id);
@@ -195,6 +192,24 @@ function RecordingsLibraryView({
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Delete failed.');
     }
+  };
+
+  const requestDelete = async (
+    metadata: RecordingMetadata,
+    trigger: HTMLButtonElement,
+  ) => {
+    if (confirmDelete) {
+      if (await confirmDelete(metadata)) await deleteRecording(metadata);
+      return;
+    }
+    deleteTriggerRef.current = trigger;
+    setPendingDelete(metadata);
+    queueMicrotask(() => cancelDeleteRef.current?.focus());
+  };
+
+  const cancelDelete = () => {
+    setPendingDelete(undefined);
+    queueMicrotask(() => deleteTriggerRef.current?.focus());
   };
 
   return (
@@ -259,7 +274,7 @@ function RecordingsLibraryView({
                 <button
                   className={`${styles.button} ${styles.danger}`}
                   type="button"
-                  onClick={() => void deleteRecording(recording)}
+                  onClick={(event) => void requestDelete(recording, event.currentTarget)}
                 >
                   Delete
                 </button>
@@ -268,6 +283,46 @@ function RecordingsLibraryView({
           ))}
         </ul>
       )}
+      {pendingDelete ? (
+        <div className={styles.dialogBackdrop}>
+          <div
+            className={styles.dialog}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={deleteTitleId}
+            aria-describedby={deleteDescriptionId}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') cancelDelete();
+            }}
+          >
+            <h3 id={deleteTitleId}>Delete this recording?</h3>
+            <p id={deleteDescriptionId}>
+              “{pendingDelete.name}” will be removed from this device. This cannot be undone.
+            </p>
+            <div className={styles.controls}>
+              <button
+                ref={cancelDeleteRef}
+                className={styles.button}
+                type="button"
+                onClick={cancelDelete}
+              >
+                Keep recording
+              </button>
+              <button
+                className={`${styles.button} ${styles.danger}`}
+                type="button"
+                onClick={() => {
+                  const recording = pendingDelete;
+                  setPendingDelete(undefined);
+                  void deleteRecording(recording);
+                }}
+              >
+                Delete permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -61,6 +61,20 @@ select:focus-visible {
   gap: 8px;
 }
 
+.pudle-demo-location {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px dashed var(--pudle-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--pudle-lilac) 45%, var(--pudle-paper));
+}
+
+.pudle-demo-location small {
+  color: var(--pudle-muted);
+  line-height: 1.4;
+}
+
 .pudle-report-review {
   min-width: 0;
   padding: 16px;

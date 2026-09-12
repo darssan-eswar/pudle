@@ -43,16 +43,19 @@ function PudyAssistant({
   onAction,
 }, ref) {
   const recognition = useRef<SpeechRecognitionLike | undefined>(undefined);
+  const mounted = useRef(true);
+  const generation = useRef(0);
   const [state, setState] = useState<PudyState>('idle');
   const [text, setText] = useState('');
   const [answer, setAnswer] = useState('Ask about only what Pudle currently displays.');
   const [speechSupported, setSpeechSupported] = useState(false);
 
   const stopSpeech = useCallback(() => {
+    generation.current += 1;
     recognition.current?.abort();
     recognition.current = undefined;
     window.speechSynthesis?.cancel();
-    setState('idle');
+    if (mounted.current) setState('idle');
   }, []);
 
   useEffect(() => {
@@ -62,12 +65,25 @@ function PudyAssistant({
     };
     setSpeechSupported(Boolean(speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition));
     if (!enabled) stopSpeech();
-    return stopSpeech;
   }, [enabled, stopSpeech]);
+
+  useEffect(() => {
+    mounted.current = true;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') stopSpeech();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      mounted.current = false;
+      document.removeEventListener('visibilitychange', handleVisibility);
+      stopSpeech();
+    };
+  }, [stopSpeech]);
 
   useImperativeHandle(ref, () => ({ stop: stopSpeech }), [stopSpeech]);
 
-  const speak = useCallback((message: string) => {
+  const speak = useCallback((message: string, requestGeneration: number) => {
+    if (!mounted.current || requestGeneration !== generation.current) return;
     recognition.current?.stop();
     recognition.current = undefined;
     if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
@@ -76,13 +92,19 @@ function PudyAssistant({
     }
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(message);
-    utterance.onend = () => setState('idle');
-    utterance.onerror = () => setState('error');
+    utterance.onend = () => {
+      if (mounted.current && requestGeneration === generation.current) setState('idle');
+    };
+    utterance.onerror = () => {
+      if (mounted.current && requestGeneration === generation.current) setState('error');
+    };
     setState('speaking');
     window.speechSynthesis.speak(utterance);
   }, []);
 
   const process = useCallback(async (input: string, requireWakePhrase: boolean) => {
+    const requestGeneration = generation.current + 1;
+    generation.current = requestGeneration;
     setState('thinking');
     const request = parsePudyRequest(input, requireWakePhrase);
     let response = groundPudyAnswer(request, {
@@ -90,10 +112,27 @@ function PudyAssistant({
       nearbyLabels,
       analysisLabels,
     });
-    if (request.kind === 'action') response = await onAction(request.action);
+    try {
+      if (request.kind === 'action') response = await onAction(request.action);
+    } catch {
+      if (
+        mounted.current
+        && enabled
+        && requestGeneration === generation.current
+      ) {
+        setAnswer('Pudy could not complete that action. Nothing was shared or saved.');
+        setState('error');
+      }
+      return;
+    }
+    if (
+      !mounted.current
+      || !enabled
+      || requestGeneration !== generation.current
+    ) return;
     setAnswer(response);
-    speak(response);
-  }, [analysisLabels, nearbyLabels, onAction, sceneLabels, speak]);
+    speak(response, requestGeneration);
+  }, [analysisLabels, enabled, nearbyLabels, onAction, sceneLabels, speak]);
 
   function listen() {
     const speechWindow = window as Window & {
@@ -107,23 +146,37 @@ function PudyAssistant({
       return;
     }
     stopSpeech();
+    const listenGeneration = generation.current;
     const next = new Recognition();
     next.continuous = false;
     next.interimResults = false;
     next.lang = navigator.language || 'en-US';
-    next.onresult = (event) => void process(event.results[0]?.[0]?.transcript ?? '', true);
+    next.onresult = (event) => {
+      if (recognition.current !== next || listenGeneration !== generation.current) return;
+      void process(event.results[0]?.[0]?.transcript ?? '', true);
+    };
     next.onerror = () => {
+      if (recognition.current !== next || listenGeneration !== generation.current) return;
       recognition.current = undefined;
       setAnswer('Listening stopped. Check microphone permission or use text.');
       setState('error');
     };
     next.onend = () => {
+      if (recognition.current !== next || listenGeneration !== generation.current) return;
       recognition.current = undefined;
       setState((current) => current === 'listening' ? 'idle' : current);
     };
     recognition.current = next;
     setState('listening');
-    next.start();
+    try {
+      next.start();
+    } catch {
+      if (recognition.current === next && listenGeneration === generation.current) {
+        recognition.current = undefined;
+        setAnswer('Listening could not start. Check microphone permission or use text.');
+        setState('error');
+      }
+    }
   }
 
   return (

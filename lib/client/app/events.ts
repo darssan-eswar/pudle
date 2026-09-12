@@ -1,10 +1,5 @@
 import { readResponse } from './api';
 
-/**
- * Single response boundary for every event request. The parent integration can
- * call notifySessionExpired(response.status) here when its session-events
- * module is present, without duplicating session lifecycle ownership.
- */
 function readEventResponse<T>(response: Response): Promise<T> {
   return readResponse<T>(response);
 }
@@ -35,6 +30,8 @@ export interface NearbyEvent {
   createdAt: number;
   expiresAt: number;
   distanceBand: DistanceBand;
+  canResolve: boolean;
+  acknowledgedByMe: boolean;
 }
 
 export interface EventCoordinates {
@@ -86,6 +83,8 @@ function parseEvent(value: unknown, nearby: boolean): NearbyEvent {
     || (item.source !== 'manual' && item.source !== 'edge-ai')
     || typeof item.createdAt !== 'number'
     || typeof item.expiresAt !== 'number'
+    || typeof item.canResolve !== 'boolean'
+    || typeof item.acknowledgedByMe !== 'boolean'
     || (nearby && (typeof item.distanceBand !== 'string' || !distanceBands.has(item.distanceBand)))
     || (item.direction !== undefined
       && (typeof item.direction !== 'string' || !directions.has(item.direction)))
@@ -164,9 +163,9 @@ export class NearbyPollController {
 
   constructor(
     private readonly task: (signal: AbortSignal) => Promise<void>,
-    intervalMs = 5_000,
+    intervalMs = 4_000,
   ) {
-    this.intervalMs = Math.max(5_000, intervalMs);
+    this.intervalMs = Math.max(4_000, intervalMs);
   }
 
   start() {
@@ -192,6 +191,7 @@ export class NearbyPollController {
 
   private async poll() {
     if (!this.running || this.inFlight) return;
+    const startedAt = Date.now();
     this.inFlight = true;
     const controller = new AbortController();
     this.controller = controller;
@@ -201,7 +201,11 @@ export class NearbyPollController {
       this.inFlight = false;
       if (this.controller === controller) this.controller = undefined;
       if (this.running) {
-        this.timer = setTimeout(() => void this.poll(), this.intervalMs);
+        const elapsed = Date.now() - startedAt;
+        this.timer = setTimeout(
+          () => void this.poll(),
+          Math.max(0, this.intervalMs - elapsed),
+        );
       }
     }
   }

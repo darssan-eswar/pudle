@@ -12,6 +12,8 @@ const event: NearbyEvent = {
   createdAt: Date.now(),
   expiresAt: Date.now() + 60_000,
   distanceBand: 'within-half-mile',
+  canResolve: false,
+  acknowledgedByMe: false,
 };
 
 function button(container: HTMLElement, label: string) {
@@ -35,6 +37,7 @@ async function mount(options: {
   api?: EventsApi;
   preparedByPudy?: boolean;
   online?: boolean;
+  demoModeEnabled?: boolean;
 } = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -48,6 +51,7 @@ async function mount(options: {
         active
         online={options.online ?? true}
         currentUserId="user-1"
+        demoModeEnabled={options.demoModeEnabled}
         preparedByPudy={options.preparedByPudy ?? false}
         onPreparedHandled={onPreparedHandled}
         onNearbyLabelsChange={onNearbyLabelsChange}
@@ -69,6 +73,28 @@ afterEach(() => {
 });
 
 describe('nearby events permission and report flow', () => {
+  it('uses the fixed demo area without requesting device location when enabled', async () => {
+    const getCurrentPosition = vi.fn();
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      onLine: true,
+      geolocation: { getCurrentPosition },
+    });
+    const api = apiFixture();
+    const mounted = await mount({ api, demoModeEnabled: true });
+
+    await act(async () => button(mounted.container, 'Use demo area').click());
+    await act(async () => Promise.resolve());
+
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+    expect(api.nearby).toHaveBeenCalledWith(
+      { latitude: 40.713, longitude: -74.006 },
+      expect.any(AbortSignal),
+    );
+    expect(mounted.container.textContent).toContain('fixed coarse test location');
+    act(() => mounted.root.unmount());
+  });
+
   it('does not request location until the explicit rationale control is used', async () => {
     const getCurrentPosition = vi.fn();
     vi.stubGlobal('navigator', {
@@ -132,7 +158,11 @@ describe('nearby events permission and report flow', () => {
       onLine: true,
       geolocation: { getCurrentPosition },
     });
-    const api = apiFixture();
+    const api = apiFixture({
+      nearby: vi.fn()
+        .mockResolvedValueOnce([event])
+        .mockResolvedValue([{ ...event, canResolve: true }]),
+    });
     const mounted = await mount({ api });
     await grantLocation(mounted.container);
     expect(button(mounted.container, 'Acknowledge')).toBeTruthy();
@@ -140,8 +170,9 @@ describe('nearby events permission and report flow', () => {
 
     act(() => button(mounted.container, 'Prepare a road report').click());
     await act(async () => button(mounted.container, 'Confirm and share').click());
-    await act(async () => Promise.resolve());
-    expect(mounted.container.textContent).toContain('Resolve my report');
+    await vi.waitFor(() =>
+      expect(mounted.container.textContent).toContain('Resolve my report'),
+    );
 
     await act(async () => button(mounted.container, 'Acknowledge').click());
     expect(api.acknowledge).toHaveBeenCalledWith(
@@ -149,6 +180,31 @@ describe('nearby events permission and report flow', () => {
       expect.stringMatching(/^event-ack-[A-Za-z0-9-]+$/),
       expect.any(AbortSignal),
     );
+    act(() => mounted.root.unmount());
+  });
+
+  it('restores owner and acknowledgement controls from a fresh server response', async () => {
+    const getCurrentPosition = vi.fn((success) => success({
+      coords: { latitude: 40, longitude: -74 },
+    }));
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      onLine: true,
+      geolocation: { getCurrentPosition },
+    });
+    const api = apiFixture({
+      nearby: vi.fn().mockResolvedValue([{
+        ...event,
+        canResolve: true,
+        acknowledgedByMe: true,
+      }]),
+    });
+    const mounted = await mount({ api });
+
+    await grantLocation(mounted.container);
+
+    expect(mounted.container.textContent).toContain('Resolve my report');
+    expect(button(mounted.container, 'Acknowledged').disabled).toBe(true);
     act(() => mounted.root.unmount());
   });
 

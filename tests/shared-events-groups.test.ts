@@ -116,8 +116,11 @@ class MemoryEventStore implements EventStore {
     this.idempotency.set(`${event.userId}:event:create:${keyHash}`, { status: 201, body: responseBody, expiresAt });
   }
 
-  async nearby() {
-    return this.events;
+  async nearby(_latitude: number, _longitude: number, _since: number, _now: number, userId: string) {
+    return this.events.map((event) => ({
+      ...event,
+      acknowledgedByMe: this.acknowledgements.has(`${event.id}:${userId}`),
+    }));
   }
 
   async acknowledge(eventId: string, userId: string, now: number) {
@@ -184,12 +187,20 @@ test('nearby events enforce radius, age, expiry, and coordinate non-disclosure',
     { ...base, id: 'old', createdAt: now - EVENT_TTL_MS - 1 },
     { ...base, id: 'expired', expiresAt: now },
   );
-  const result = await createEventService(store, { now: () => now }).nearby(40, -74);
+  const service = createEventService(store, { now: () => now });
+  const result = await service.nearby(40, -74, 'owner');
   assert.deepEqual(result.map((event) => event.id), ['near']);
   assert.equal(Object.hasOwn(result[0], 'latitude'), false);
   assert.equal(Object.hasOwn(result[0], 'longitude'), false);
   assert.equal(Object.hasOwn(result[0], 'distanceMiles'), false);
   assert.equal(result[0].distanceBand, 'within-half-mile');
+  assert.equal(result[0].canResolve, true);
+  assert.equal(result[0].acknowledgedByMe, false);
+
+  await service.acknowledge('near', 'owner');
+  const afterReload = await service.nearby(40, -74, 'owner');
+  assert.equal(afterReload[0].canResolve, true);
+  assert.equal(afterReload[0].acknowledgedByMe, true);
 });
 
 test('event metadata rejects invalid ranges, confidence, and adversarial values', () => {

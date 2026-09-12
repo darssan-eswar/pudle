@@ -79,3 +79,30 @@
   border-radius: 0.5rem;
   background: #111;
 }
+
+.dialogBackdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(33 27 46 / 48%);
+}
+
+.dialog {
+  display: grid;
+  width: min(100%, 28rem);
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid rgb(33 27 46 / 18%);
+  border-radius: 1.25rem;
+  background: #fffaf2;
+  box-shadow: 0 1.5rem 4rem rgb(33 27 46 / 24%);
+  color: #211b2e;
+}
+
+.dialog h3,
+.dialog p {
+  margin: 0;
+}

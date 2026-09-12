@@ -9,7 +9,7 @@ import {
 import { createAuthService } from '../server/auth/service';
 import { requireAuthenticatedUser, requireMembership } from '../server/auth/authorization';
 import { HttpError, readJsonObject } from '../server/http';
-import { authorizeDemoReset } from '../server/demo';
+import { authorizeDemoReset, isDemoMode } from '../server/demo';
 import { requireMutationOrigin, sha256 } from '../server/security';
 import { signedOutResponse } from '../server/auth/route-helpers';
 import { clearSessionCookie, sessionCookie } from '../server/auth/cookies';
@@ -386,6 +386,8 @@ test('mutation origin and CSRF header are both required', () => {
 });
 
 test('demo reset gates mode before rate limiting and rate-limits secret guesses', async () => {
+  assert.equal(isDemoMode({ DEMO_MODE: 'true' }), true);
+  assert.equal(isDemoMode({ DEMO_MODE: 'false' }), false);
   let attempts = 0;
   const consumeAttempt = async () => {
     attempts += 1;

@@ -9,14 +9,14 @@ Pudle (**Peer Updated Driving Logic Engine**) is a privacy-first road-intelligen
 - Authenticated D1-backed events limited to two miles and 30 minutes, with owner resolution and idempotent acknowledgements
 - Invite-only, 24-hour demo ride groups and member-isolated plain-text messaging
 - Email/password accounts with PBKDF2-SHA-256 password hashes
-- Rotating opaque sessions in `Secure`, `HttpOnly`, `SameSite=Strict` cookies; only SHA-256 token hashes are stored
+- Rotating opaque sessions in `Secure`, `HttpOnly`, `SameSite=Strict` production cookies; loopback HTTP previews use a separate local-only cookie name
 - Owner-isolated D1 recording metadata APIs (media is never accepted or stored)
 - Explicitly opted-in, bounded still-frame road analysis through the server-only Gemini REST API
 - Strict analysis output validation, per-user/IP rate limits, idempotency, recoverable processing leases, timeout, bounded transient retry, and 30-minute logical result retention
 - D1 contracts for event acknowledgement/resolution, invite-only groups, messages, idempotency, rate limits, and retention
-- Pudy-labelled local demo query UI
-
-Private browser-recording modules, cloud analysis APIs, and group/messaging APIs are implemented. Their final mobile UI integration and grounded Pudy voice behavior are still in progress.
+- Integrated Drive, Recordings, Ride, and Privacy surfaces with account-safe cleanup and explicit permission states
+- Nearby report review/confirmation, acknowledgement, owner resolution, and privacy-preserving polling
+- Foreground Pudy voice/text controls grounded only in displayed local, cloud, and nearby observations
 
 ## Privacy model
 
@@ -64,6 +64,8 @@ curl --fail-with-body -X POST http://localhost:4173/api/demo/reset \
 
 This creates `driver@demo.pudle.local` and `passenger@demo.pudle.local` with the two configured passwords. The reset route exists only when `DEMO_MODE=true`; it is rate-limited and uses normal password hashing and server sessions. Do not point these commands at a shared state directory or add `--remote`.
 
+When demo mode is enabled, Drive also shows **Use demo area**. It uses one fixed, visibly labeled coarse test coordinate for both accounts and never requests device geolocation. The normal **Share approximate location** opt-in remains separate. `GET /api/demo/status` returns only `{ "enabled": boolean }`; no reset secret or password is exposed.
+
 `GEMINI_API_KEY` is optional and server-only. With no key, `GET /api/analysis/status` reports `configured: false` and analysis returns `provider_unconfigured`; it never presents a fixture as live output. `GEMINI_MODEL` defaults to `gemini-3.8-flash`. Live provider verification remains blocked until a valid key and applicable provider account are supplied.
 
 Apply generated migrations using the deployment environment’s Wrangler/D1 workflow. The schema source of truth is `db/schema.ts`; after changing it:
@@ -92,6 +94,7 @@ Endpoints:
 | `/api/auth/signin` | `POST` | Returns a generic credential error and rotates existing sessions |
 | `/api/auth/session` | `GET` | Returns `{ "user": null }` or the minimum public user fields |
 | `/api/auth/signout` | `POST` | Invalidates the current token and clears the cookie |
+| `/api/demo/status` | `GET` | Returns only whether local demo controls are enabled |
 | `/api/demo/reset` | `POST` | Resets demo credentials only under the explicit demo gate |
 
 Clients never provide a trusted user ID. Server routes derive identity from the session cookie. Email is trimmed/lowercased, names and passwords are bounded, and payloads are size/shape checked. Signup, sign-in, event creation, and enabled demo-reset attempts are rate-limited. Sign-out is deliberately not rate-limited so a client can always invalidate its session and clear its cookie.
@@ -153,6 +156,19 @@ The reset endpoint creates two clearly labelled accounts using normal password h
 - `passenger@demo.pudle.local` — **Demo Passenger**
 
 Set `DEMO_MODE=true`, `DEMO_RESET_SECRET`, `DEMO_DRIVER_PASSWORD`, and `DEMO_PASSENGER_PASSWORD`, then send a same-origin `POST /api/demo/reset` with `X-Pudle-CSRF: 1` and the reset secret in `X-Demo-Reset-Secret`. Passwords are runtime configuration and are not committed. Outside explicit demo mode the endpoint returns 404.
+
+## 60–90 second demo
+
+1. Open two private browser contexts at the local preview URL and sign in as the configured Driver and Passenger accounts. Reload once to show that each secure server identity persists independently.
+2. On Driver, enable the camera, record a short clip, stop and save it, then open Recordings to play and export the device-local video. Point out that only its metadata syncs.
+3. In Drive, tap **Share approximate location**, choose an observable road condition, review the rounded-location disclosure, and confirm the report. Show it in Passenger’s nearby feed, acknowledge it, then resolve it from Driver.
+4. In Ride, have Driver create an email-bound Passenger invite. Redeem it in Passenger, send a short message, and show it arrive through persisted polling.
+5. Ask Pudy what is displayed, then prepare a hazard report. Show that Pudy opens review but cannot share without confirmation.
+6. Open Privacy and sign out. Explain that sign-out stops media, revokes playback URLs, closes account-scoped storage, and prevents another account from seeing the clips.
+
+Without `GEMINI_API_KEY`, keep the cloud status visibly **Unconfigured** during the demo. If a credential is later supplied, disclose the provider terms before enabling periodic compressed-frame analysis; never imply that recordings or audio are uploaded.
+
+Automated Pudy component tests use controlled mock browser speech-recognition and synthesis objects to verify cancellation, stale-response suppression, synchronous start errors, and rejected actions. They are not evidence that a physical microphone or a specific browser vendor’s speech service works on a target phone; verify that separately on the presentation device.
 
 ## Project structure
 

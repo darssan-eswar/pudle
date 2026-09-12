@@ -14,6 +14,8 @@ const nearbyEvent: NearbyEvent = {
   createdAt: 1_000,
   expiresAt: 2_000,
   distanceBand: 'within-one-mile',
+  canResolve: false,
+  acknowledgedByMe: false,
 };
 
 afterEach(() => {
@@ -95,7 +97,7 @@ describe('events client adapter', () => {
 });
 
 describe('nearby poll controller', () => {
-  it('clamps cadence to five seconds, deduplicates in-flight work, and aborts on stop', async () => {
+  it('clamps cadence to four seconds, deduplicates in-flight work, and aborts on stop', async () => {
     vi.useFakeTimers();
     let release: (() => void) | undefined;
     let signal: AbortSignal | undefined;
@@ -106,7 +108,7 @@ describe('nearby poll controller', () => {
       });
     });
     const poller = new NearbyPollController(task, 100);
-    expect(poller.intervalMs).toBe(5_000);
+    expect(poller.intervalMs).toBe(4_000);
     poller.start();
     poller.start();
     await vi.waitFor(() => expect(task).toHaveBeenCalledTimes(1));
@@ -120,14 +122,14 @@ describe('nearby poll controller', () => {
     expect(task).toHaveBeenCalledTimes(1);
   });
 
-  it('waits for the bounded interval before the next completed poll', async () => {
+  it('schedules the next poll four seconds from the prior start', async () => {
     vi.useFakeTimers();
     const task = vi.fn().mockResolvedValue(undefined);
     const poller = new NearbyPollController(task);
     poller.start();
     await Promise.resolve();
     expect(task).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(4_999);
+    await vi.advanceTimersByTimeAsync(3_999);
     expect(task).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(task).toHaveBeenCalledTimes(2);
