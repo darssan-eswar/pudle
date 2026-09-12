@@ -45,8 +45,8 @@ export type CloudAnalysisErrorCode =
   | 'malformed_provider_response';
 
 /**
- * Contract documentation only. This client intentionally exposes no submit
- * method and never samples or uploads camera frames.
+ * Contract shared by the explicitly consented frame-analysis client.
+ * Full recordings and audio are never accepted by this submission path.
  */
 export interface CloudAnalysisSubmissionContract {
   contentType: 'image/jpeg' | 'image/webp';
