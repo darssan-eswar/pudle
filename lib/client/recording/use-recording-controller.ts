@@ -53,6 +53,8 @@ export function useRecordingController(
   const mounted = useRef(true);
   const session = useRef<CameraSession | undefined>(undefined);
   const recorder = useRef<BrowserRecorder | undefined>(undefined);
+  const acquisitionGeneration = useRef(0);
+  const pendingAcquisition = useRef<Promise<void> | undefined>(undefined);
   const callbacks = useRef<RecordingCallbacks>(options);
 
   useEffect(() => {
@@ -115,6 +117,19 @@ export function useRecordingController(
     [emit, notifyMetadata, options.account],
   );
 
+  const invalidatePendingAcquisition = useCallback(() => {
+    acquisitionGeneration.current += 1;
+    pendingAcquisition.current = undefined;
+  }, []);
+
+  const disposeCapture = useCallback(() => {
+    invalidatePendingAcquisition();
+    recorder.current?.dispose();
+    recorder.current = undefined;
+    session.current?.stop();
+    session.current = undefined;
+  }, [invalidatePendingAcquisition]);
+
   const handleInterruption = useCallback(async () => {
     updateState('interrupted');
     emit({ type: 'stream-interrupted' });
@@ -134,54 +149,67 @@ export function useRecordingController(
     }
   }, [emit, reportError, saveCompleted, updateState]);
 
-  const acquireCamera = useCallback(async () => {
+  const acquireCamera = useCallback((): Promise<void> => {
     if (session.current) {
-      return;
+      return Promise.resolve();
     }
+    if (pendingAcquisition.current) {
+      return pendingAcquisition.current;
+    }
+
+    const generation = acquisitionGeneration.current;
     setError(undefined);
     updateState('acquiring');
-    try {
-      const acquired = await acquireRearCamera({
-        onInterrupted: () => void handleInterruption(),
-      });
-      if (!mounted.current) {
-        acquired.stop();
-        return;
+
+    const request = (async () => {
+      try {
+        const acquired = await acquireRearCamera({
+          onInterrupted: () => void handleInterruption(),
+        });
+        if (
+          !mounted.current ||
+          generation !== acquisitionGeneration.current
+        ) {
+          acquired.stop();
+          return;
+        }
+        session.current = acquired;
+        recorder.current = new BrowserRecorder(acquired.stream, {
+          onElapsed: setElapsedMs,
+          onStateChange: updateState,
+        });
+        setStream(acquired.stream);
+        updateState('ready');
+        emit({ type: 'stream-ready', stream: acquired.stream });
+      } catch (caught) {
+        if (
+          !mounted.current ||
+          generation !== acquisitionGeneration.current
+        ) {
+          return;
+        }
+        session.current?.stop();
+        session.current = undefined;
+        recorder.current?.dispose();
+        recorder.current = undefined;
+        setStream(undefined);
+        reportError(caught);
+      } finally {
+        if (generation === acquisitionGeneration.current) {
+          pendingAcquisition.current = undefined;
+        }
       }
-      session.current = acquired;
-      recorder.current = new BrowserRecorder(acquired.stream, {
-        onElapsed: setElapsedMs,
-        onStateChange: updateState,
-      });
-      setStream(acquired.stream);
-      updateState('ready');
-      emit({ type: 'stream-ready', stream: acquired.stream });
-    } catch (caught) {
-      session.current?.stop();
-      session.current = undefined;
-      recorder.current?.dispose();
-      recorder.current = undefined;
-      setStream(undefined);
-      reportError(caught);
-    }
+    })();
+    pendingAcquisition.current = request;
+    return request;
   }, [emit, handleInterruption, reportError, updateState]);
 
   const releaseCamera = useCallback(() => {
-    recorder.current?.dispose();
-    recorder.current = undefined;
-    session.current?.stop();
-    session.current = undefined;
+    disposeCapture();
     setStream(undefined);
     setElapsedMs(0);
     updateState('idle');
-  }, [updateState]);
-
-  const disposeCapture = useCallback(() => {
-    recorder.current?.dispose();
-    recorder.current = undefined;
-    session.current?.stop();
-    session.current = undefined;
-  }, []);
+  }, [disposeCapture, updateState]);
 
   const dispose = useCallback(() => {
     options.account.dispose();
