@@ -83,7 +83,9 @@ function migratedD1Fixture() {
     'drizzle/0000_woozy_paladin.sql',
     'drizzle/0001_sad_ares.sql',
     'drizzle/0002_fix-road-event-user-fk.sql',
-    'drizzle/0003_curvy_texas_twister.sql',
+    'drizzle/0003_windy_the_professor.sql',
+    'drizzle/0004_boring_spyke.sql',
+    'drizzle/0005_exotic_rocket_raccoon.sql',
   ]) {
     sqlite.database.exec(readFileSync(migration, 'utf8').replaceAll('--> statement-breakpoint', ''));
   }
