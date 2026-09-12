@@ -13,4 +13,3 @@ export async function disposeLocalSession(
   resources.closeStorage();
   resources.clearUi();
 }
-

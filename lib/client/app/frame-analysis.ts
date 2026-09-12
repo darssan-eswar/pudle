@@ -62,11 +62,9 @@ export class CloudFrameController {
       if (this.active === controller) this.active = undefined;
     }
   }
-
   disable(): void {
     this.enabled = false;
     this.active?.abort();
     this.active = undefined;
   }
 }
-
