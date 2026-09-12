@@ -1,4 +1,5 @@
 import { HttpError } from '@/server/http';
+import { createRuntimeId } from '@/server/runtime-id.mjs';
 import { sha256 } from '@/server/security';
 
 export const EVENT_TTL_MS = 30 * 60_000;
@@ -122,7 +123,7 @@ function publicEvent(event: EventRecord, distance?: number) {
 
 export function createEventService(store: EventStore, options?: { now?: () => number; createId?: () => string }) {
   const now = options?.now ?? Date.now;
-  const createId = options?.createId ?? crypto.randomUUID;
+  const createId = options?.createId ?? createRuntimeId;
 
   return {
     async create(userId: string, body: Record<string, unknown>, idempotencyKey: string) {

@@ -1,4 +1,5 @@
 import { HttpError } from '@/server/http';
+import { createRuntimeId } from '@/server/runtime-id.mjs';
 import { createOpaqueToken, sha256 } from '@/server/security';
 
 const GROUP_TTL_MS = 24 * 60 * 60_000;
@@ -76,7 +77,7 @@ export function parseCursor(value: string | null) {
 
 export function createGroupsService(store: GroupsStore, options?: { now?: () => number; createId?: () => string; createToken?: () => string }) {
   const now = options?.now ?? Date.now;
-  const createId = options?.createId ?? crypto.randomUUID;
+  const createId = options?.createId ?? createRuntimeId;
   const createToken = options?.createToken ?? createOpaqueToken;
 
   async function requireMember(userId: string, groupId: string) {
