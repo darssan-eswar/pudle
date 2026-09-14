@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:landing": "node --import tsx scripts/build-landing.ts",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit",

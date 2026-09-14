@@ -1,8 +1,10 @@
 # Vercel entry point
 
-This directory deploys a Vercel reverse proxy for the existing Pudle Worker. The Worker serves the landing page at `/`, the app at `/app`, and the authenticated API at `/api`. D1 remains attached to the Worker; the Vercel deployment does not contain a second database or copies of private media.
+This directory deploys a public static landing page and a Vercel reverse proxy for the existing Pudle Worker. The static page reuses `app/page.tsx`; it contains no authenticated data or client JavaScript. The Worker serves the app at `/app` and the authenticated API at `/api`. D1 remains attached to the Worker; the Vercel deployment does not contain a second database or copies of private media.
 
 Deploy this directory, not the repository root. The root build targets Cloudflare Workers and cannot be treated as a standard Next.js Vercel build.
+
+Run `npm run build` and `npm run build:landing` from the repository root before deploying this directory. Generated landing assets are ignored by Git but included in the Vercel upload using `.vercelignore`. The assigned public landing address is `https://pudle-demo.vercel.app`; `pudle.vercel.app` was unavailable. If that address changes, update the static canonical URL in `scripts/build-landing.ts`.
 
 Before public release:
 

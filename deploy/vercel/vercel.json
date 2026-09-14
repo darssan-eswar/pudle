@@ -6,8 +6,16 @@
   "outputDirectory": "public",
   "rewrites": [
     {
-      "source": "/:path*",
-      "destination": "https://pulzar-road-intelligence.ledarssan919276.chatgpt.site/:path*"
+      "source": "/app/:path*",
+      "destination": "https://pulzar-road-intelligence.ledarssan919276.chatgpt.site/app/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "https://pulzar-road-intelligence.ledarssan919276.chatgpt.site/api/:path*"
+    },
+    {
+      "source": "/_next/:path*",
+      "destination": "https://pulzar-road-intelligence.ledarssan919276.chatgpt.site/_next/:path*"
     }
   ],
   "headers": [
