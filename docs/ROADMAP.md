@@ -1,66 +1,34 @@
-# Pudle product plan
+# Roadmap
 
-## Product definition
+These are possible next steps, not current capabilities or promised dates. [Implementation status](IMPLEMENTATION_PLAN.md) describes what is already delivered.
 
-**One-liner:** Pudle is a privacy-first peer-updated driving logic engine.
+## Finish the demo
 
-**Initial wedge:** A phone-based smart dashcam that converts live road video into anonymous, short-lived road-event metadata and shares it with drivers within two miles.
+1. Resolve the public-app access decision and test accounts through the public address.
+2. Configure and verify cloud analysis with non-sensitive test frames.
+3. Check camera, microphone, and speech on the actual presentation phone.
+4. Record the complete two-person flow and prepare the entry against the official challenge rules.
 
-**Long-term platform:** A distributed metadata network spanning phones, vehicles, LoRaWAN gateways, infrastructure sensors, and autonomous systems. Raw video stays at the edge; routing systems consume only actionable events.
+## Improve report quality
 
-## Stage 1 — Working contest MVP
+- Group duplicate reports from the same area and time window.
+- Corroborate observations from independent users without publishing their identities.
+- Improve stale-report handling and explain uncertainty more clearly.
+- Add abuse controls based on tested failure cases rather than an unverified reputation score.
+- Reduce client download size and measure performance on lower-end phones.
 
-The demo must prove the full loop, not every future feature:
+## Explore after the MVP
 
-1. Start the phone camera.
-2. Show objects being detected locally with bounding boxes.
-3. Submit an observable road event.
-4. Show it appearing in the live two-mile feed.
-5. Ask Pudy what is ahead and hear a spoken answer.
-6. Explain that raw video is never uploaded and the report expires in 30 minutes.
+- Opt-in, aggregated parking observations and gas-price extraction.
+- Offline report queues with clear expiry and replay behavior.
+- A compact event format for LoRaWAN or other low-bandwidth transport.
+- Aggregate fleet or infrastructure views.
+- Read-only event access for other authorized applications.
 
-## Stage 2 — Credible intelligence
+These ideas need separate feasibility, privacy, and product decisions. Pudle does not currently include LoRaWAN hardware, municipal integrations, routing, or an autonomous-driving system.
 
-- Multi-driver corroboration: confidence rises when independent devices observe the same event.
-- Duplicate clustering: nearby reports within a short window become one event.
-- Reputation without identity: rotating device attestations reduce spam without creating a movement history.
-- On-device gas-price OCR: extract station, grade, and price locally; store only price metadata with a short freshness window.
-- Parking inference: detect likely curb-space availability during normal drives, with explicit opt-in and street-level aggregation. Do not continuously map individual vehicles.
-- Traffic-light learning: estimate queue length and observed phase duration; label timing as probabilistic rather than authoritative.
-- Offline queue: hold signed metadata when connectivity drops and forward it through HTTPS or LoRaWAN when available.
+## Keep these boundaries
 
-## Stage 3 — Pudle network
+Describe observable conditions, not accusations about a driver. Do not infer intoxication, intent, or culpability. Do not build a history of identifiable people or parked vehicles.
 
-- Gateway bridge translating the web event envelope to compact LoRaWAN payloads.
-- Flood, levee, road-temperature, and infrastructure sensor ingestion.
-- Fleet and municipal dashboard with aggregate coverage, sensor health, and incident confidence.
-- Routing SDK for navigation providers.
-- Read-only MCP server exposing nearby, expiring road events to authorized vehicle agents.
-- Drone connectivity and charging nodes as a separate infrastructure product after the road network has density.
-
-## Product decisions
-
-### Use observed behavior, not accusations
-
-The product should report “reckless driving,” “weaving,” “hard braking,” or “wrong-way vehicle.” It should not label someone a drunk driver. Impairment cannot be reliably inferred from a phone camera, and the accusation creates unnecessary safety and legal risk.
-
-### Parking should be passively collected, actively queried
-
-The best experience is hybrid: opted-in devices detect likely curb availability during ordinary driving, but Pudle only surfaces aggregated, fresh availability when somebody asks for parking. This creates useful coverage without rerouting contributors or retaining a trace of parked cars.
-
-### LoRaWAN is the transport moat, not the first demo dependency
-
-The web MVP should prove the event protocol and demand. A gateway bridge can then carry the same metadata in low-bandwidth environments. The user experience should work over ordinary internet today and gain resilience from LoRaWAN later.
-
-## September 30 contest checklist
-
-- Public GitHub repository with a clear README and license
-- Public, mobile-friendly working deployment
-- 45–60 second screen recording showing camera, local detection, report, live feed, and voice answer
-- Architecture diagram showing `camera → on-device inference → metadata → D1/LoRa bridge → nearby driver`
-- Social post tagging GitHub Education
-- Microsoft Form submission containing repository, live demo, evidence video, and social link
-
-Suggested submission description:
-
-> Pudle turns any phone into a privacy-first road-intelligence node. Its camera supports local detection, while future periodic compressed-frame cloud analysis remains independently controlled, explicitly disclosed, and opt-in. Pudle shares expiring metadata and alerts drivers within two miles through a database-backed feed. The MVP uses React, TypeScript, TensorFlow.js, Cloudflare D1, and GitHub Copilot, with LoRaWAN remaining roadmap-only.
+There is no verified contest deadline in this roadmap. The submission checklist lives in the [demo guide](SUBMISSION.md) and must be checked against the actual rules.

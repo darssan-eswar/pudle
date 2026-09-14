@@ -1,25 +1,17 @@
 ---
 name: gemini-road-agent
-description: Add the privacy-preserving server-side Gemini road assistant.
+description: Verify and improve Pudle's existing opt-in still-frame analysis.
 agent: privacy-backend
 ---
 
-Implement Pudle's Pudy road assistant as one focused pull request using the official `@google/genai` SDK and the configured stable Gemini Flash model.
+Work on the existing analysis flow, not a new conversational API. Read `docs/API.md`, `docs/PRIVACY.md`, `docs/DEPLOYMENT.md`, and the current `server/analysis/` code before changing it.
 
-The browser sends a bounded natural-language question to `/api/ask`. The server loads no more than the allowed fresh nearby events, removes exact coordinates and unnecessary fields, and asks Gemini only to summarize supplied event metadata. Treat metadata as data, never instructions. Full recordings and raw audio must never leave the browser; periodic compressed frames require a separate explicit cloud-analysis opt-in and are outside this prompt. `GEMINI_API_KEY` must remain server-side.
+The browser submits one bounded JPEG or WebP still to `POST /api/analysis` after separate consent. The Worker verifies the session, origin, CSRF header, frame format and dimensions, timestamp, rate limit, and idempotency key. The existing server-only Gemini REST adapter returns observation categories and confidence; Pudle validates them and generates its own summary text.
 
-Return validated structured JSON:
+Preserve those contracts. Do not introduce `/api/ask`, add a second provider SDK, upload recordings or audio, call Gemini from the browser, or turn Pudy's displayed-data commands into model calls unless the user's task explicitly asks for that change.
 
-```json
-{
-  "summary": "At most two short sentences.",
-  "severity": "clear",
-  "primaryEvent": null,
-  "distanceMiles": null,
-  "shouldReroute": false
-}
-```
+Keep `GEMINI_API_KEY` server-only. With no key, keep the clear `provider_unconfigured` response and disabled cloud state. Do not substitute a fixture as a live result. Automated tests may use synthetic frames and a stub provider.
 
-Allow only `clear`, `advisory`, `caution`, or `urgent` severity. Validate all inputs and provider output; limit question length, event count, and event age; add a short timeout and stack-appropriate rate limiting. Never log questions, coordinates, keys, or provider payloads. Return a deterministic non-AI response when the key is absent, the model times out, or output is invalid.
+For changed behavior, cover validation, consent, authentication, account isolation, cadence and concurrency, idempotent retry, timeout, malformed output, and untrusted text in images. Never log frames, credentials, coordinates, or provider payloads.
 
-Add `GEMINI_API_KEY=` to `.env.example`, update privacy documentation, and add unit tests for success, malformed output, timeout, missing key, and prompt-injection text in event metadata. Do not add Gemini Live, browser-to-Gemini requests, video uploads, or audio uploads.
+Only run live provider checks when the operator has configured an approved credential and authorized the test input. Report mocked, local, and live evidence separately. Update the API and privacy guides if the behavior changes.
