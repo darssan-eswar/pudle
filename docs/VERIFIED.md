@@ -1,6 +1,6 @@
 # Pudle MVP verification
 
-Verified on 2026-09-12 against the isolated local D1 configured by `PUDLE_LOCAL_STATE_PATH`. No shared or remote database was reset, migrated, or modified.
+Verified on 2026-09-14 against the isolated local D1 configured by `PUDLE_LOCAL_STATE_PATH`. No shared or remote database was reset, migrated, or modified.
 
 ## Automated checks
 
@@ -19,15 +19,18 @@ Final results:
 - ESLint: passed after removing all warnings introduced by this work.
 - TypeScript: passed.
 - Server tests: 48 passed.
-- Client tests: 78 passed across 16 files.
-- Total tests: 126 passed.
+- Client tests: 83 passed across 17 files.
+- Total tests: 131 passed.
 - Production build: passed. Vinext emitted only the known non-failing client chunk-size advisory.
 - Diff whitespace check: passed.
 
 Automated Pudy tests use controlled mock `SpeechRecognition`, `SpeechSynthesisUtterance`, and speech-synthesis objects. They verify cancellation on stop, hidden tab, and unmount; suppression of stale and superseded action responses; synchronous recognition-start errors; and rejected actions. They do not prove physical microphone capture or a browser vendor's transcription service.
 
+Route regressions render both entry points: `/` contains the public product pitch and CTAs into `/app`; `/app` retains authenticated session restoration and the complete product lifecycle.
+
 ## Browser-tested at `http://localhost:4173`
 
+- Fresh isolated Chromium profiles loaded the editorial landing page at `/` and the existing sign-in product shell at `/app`. A 500×900 phone-sized capture confirmed the landing hierarchy, CTAs, compact copy, and no visible horizontal clipping. No device permission or account credential was used for this route check.
 - Two independent browser contexts restored distinct Driver and Passenger server sessions.
 - Loopback HTTP used the local-only session cookie; production requests retain the `Secure`, `HttpOnly`, `SameSite=Strict`, `__Host-` cookie.
 - The 320px viewport with a scrollbar measured `clientWidth = scrollWidth = bodyWidth = 305px`, with no horizontal clipping or browser errors.
@@ -73,4 +76,4 @@ curl --fail-with-body -X POST http://localhost:4173/api/demo/reset \
   -H "X-Demo-Reset-Secret: $DEMO_RESET_SECRET"
 ```
 
-Open two independent browser contexts, sign in as `driver@demo.pudle.local` and `passenger@demo.pudle.local` with the configured passwords, and follow the 60–90 second demo in `README.md`. Use **Use demo area** for nearby-event demonstrations without sharing device GPS.
+Open `/`, follow **Open Pudle** to `/app`, then use two independent `/app` browser contexts. Sign in as `driver@demo.pudle.local` and `passenger@demo.pudle.local` with the configured passwords, and follow the 60–90 second demo in `README.md`. Use **Use demo area** for nearby-event demonstrations without sharing device GPS.

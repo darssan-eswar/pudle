@@ -14,7 +14,7 @@ class MockRecognition {
   interimResults = false;
   lang = '';
   onresult: ((event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void) | null = null;
-  onerror: (() => void) | null = null;
+  onerror: ((event: { error?: string }) => void) | null = null;
   onend: (() => void) | null = null;
   start = vi.fn(() => {
     if (MockRecognition.throwOnStart) throw new Error('microphone unavailable');
@@ -28,6 +28,10 @@ class MockRecognition {
 
   result(transcript: string) {
     this.onresult?.({ results: [{ 0: { transcript } }] });
+  }
+
+  error(code: string) {
+    this.onerror?.({ error: code });
   }
 }
 
@@ -79,6 +83,10 @@ describe('PudyAssistant mocked browser speech lifecycle', () => {
   beforeEach(() => {
     MockRecognition.instances = [];
     MockRecognition.throwOnStart = false;
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
     vi.stubGlobal('SpeechRecognition', MockRecognition);
     vi.stubGlobal('SpeechSynthesisUtterance', MockUtterance);
     Object.defineProperty(window, 'speechSynthesis', {
@@ -97,7 +105,7 @@ describe('PudyAssistant mocked browser speech lifecycle', () => {
   it('invalidates a delayed action when stopped before it resolves', async () => {
     const action = deferred<string>();
     const mounted = mount({ onAction: vi.fn(() => action.promise) });
-    act(() => button(mounted.container, 'Listen').click());
+    act(() => button(mounted.container, 'Enable voice').click());
     await act(async () => {
       MockRecognition.instances[0].result('Hey Pudy save clip');
       await Promise.resolve();
@@ -118,7 +126,7 @@ describe('PudyAssistant mocked browser speech lifecycle', () => {
   it('lets a newer request supersede a delayed action response', async () => {
     const action = deferred<string>();
     const mounted = mount({ onAction: vi.fn(() => action.promise) });
-    act(() => button(mounted.container, 'Listen').click());
+    act(() => button(mounted.container, 'Enable voice').click());
     const active = MockRecognition.instances[0];
     await act(async () => {
       active.result('Hey Pudy save clip');
@@ -150,7 +158,7 @@ describe('PudyAssistant mocked browser speech lifecycle', () => {
   it('does not resume a delayed action after unmount', async () => {
     const action = deferred<string>();
     const mounted = mount({ onAction: vi.fn(() => action.promise) });
-    act(() => button(mounted.container, 'Listen').click());
+    act(() => button(mounted.container, 'Enable voice').click());
     await act(async () => {
       MockRecognition.instances[0].result('Hey Pudy save clip');
       await Promise.resolve();
@@ -167,7 +175,7 @@ describe('PudyAssistant mocked browser speech lifecycle', () => {
     const mounted = mount({
       onAction: vi.fn().mockRejectedValue(new Error('storage failed')),
     });
-    act(() => button(mounted.container, 'Listen').click());
+    act(() => button(mounted.container, 'Enable voice').click());
     await act(async () => {
       MockRecognition.instances[0].result('Hey Pudy save clip');
       await Promise.resolve();
@@ -183,11 +191,11 @@ describe('PudyAssistant mocked browser speech lifecycle', () => {
   it('handles synchronous recognition start failures and hidden-tab cancellation', () => {
     MockRecognition.throwOnStart = true;
     const mounted = mount();
-    act(() => button(mounted.container, 'Listen').click());
+    act(() => button(mounted.container, 'Enable voice').click());
     expect(mounted.container.textContent).toContain('Listening could not start');
 
     MockRecognition.throwOnStart = false;
-    act(() => button(mounted.container, 'Listen').click());
+    act(() => button(mounted.container, 'Enable voice').click());
     const active = MockRecognition.instances.at(-1)!;
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -198,6 +206,73 @@ describe('PudyAssistant mocked browser speech lifecycle', () => {
     expect(active.abort).toHaveBeenCalledOnce();
     expect(cancel).toHaveBeenCalled();
     expect(mounted.container.textContent).toContain('idle');
+    act(() => mounted.root.unmount());
+  });
+
+  it('keeps listening across utterances and resumes after speech', async () => {
+    const mounted = mount();
+    act(() => button(mounted.container, 'Enable voice').click());
+    const first = MockRecognition.instances[0];
+
+    await act(async () => {
+      first.result('traffic sounds');
+      await Promise.resolve();
+    });
+
+    expect(MockRecognition.instances).toHaveLength(2);
+    expect(mounted.container.textContent).toContain('Listening for “Hey Pudy.”');
+
+    await act(async () => {
+      MockRecognition.instances[1].result('Hey Pudy what is visible');
+      await Promise.resolve();
+    });
+    expect(speak).toHaveBeenCalledOnce();
+    expect(mounted.container.textContent).toContain('speaking');
+
+    act(() => {
+      const utterance = speak.mock.calls[0][0] as MockUtterance;
+      utterance.onend?.();
+    });
+    expect(MockRecognition.instances).toHaveLength(3);
+    expect(mounted.container.textContent).toContain('listening');
+    act(() => mounted.root.unmount());
+  });
+
+  it('pauses while hidden, resumes when visible, and stays stopped after Stop voice', () => {
+    const mounted = mount();
+    act(() => button(mounted.container, 'Enable voice').click());
+    const first = MockRecognition.instances[0];
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    });
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(first.abort).toHaveBeenCalledOnce();
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(MockRecognition.instances).toHaveLength(2);
+
+    act(() => button(mounted.container, 'Stop voice').click());
+    expect(MockRecognition.instances[1].abort).toHaveBeenCalledOnce();
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(MockRecognition.instances).toHaveLength(2);
+    expect(mounted.container.textContent).toContain('Enable voice');
+    act(() => mounted.root.unmount());
+  });
+
+  it('explains denied microphone permission and keeps text available', () => {
+    const mounted = mount();
+    act(() => button(mounted.container, 'Enable voice').click());
+    act(() => MockRecognition.instances[0].error('not-allowed'));
+
+    expect(mounted.container.textContent).toContain('Microphone permission was denied');
+    expect((mounted.container.querySelector('input') as HTMLInputElement).disabled).toBe(false);
+    expect(mounted.container.textContent).toContain('Enable voice');
     act(() => mounted.root.unmount());
   });
 });

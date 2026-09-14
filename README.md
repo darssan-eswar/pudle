@@ -4,6 +4,7 @@ Pudle (**Peer Updated Driving Logic Engine**) is a privacy-first road-intelligen
 
 ## Current implementation
 
+- Public editorial product page at `/`; the authenticated dashcam product lives at `/app`
 - Live rear-camera preview and optional on-device TensorFlow.js / COCO-SSD detection
 - Manual and edge-assisted road-event metadata, rounded to three decimal places
 - Authenticated D1-backed events limited to two miles and 30 minutes, with owner resolution and idempotent acknowledgements
@@ -16,7 +17,7 @@ Pudle (**Peer Updated Driving Logic Engine**) is a privacy-first road-intelligen
 - D1 contracts for event acknowledgement/resolution, invite-only groups, messages, idempotency, rate limits, and retention
 - Integrated Drive, Recordings, Ride, and Privacy surfaces with account-safe cleanup and explicit permission states
 - Nearby report review/confirmation, acknowledgement, owner resolution, and privacy-preserving polling
-- Foreground Pudy voice/text controls grounded only in displayed local, cloud, and nearby observations
+- Explicitly enabled foreground Pudy voice/text controls grounded only in displayed local, cloud, and nearby observations; “Hey Pudy” listening pauses for replies and whenever the page is hidden
 
 ## Privacy model
 
@@ -159,16 +160,18 @@ Set `DEMO_MODE=true`, `DEMO_RESET_SECRET`, `DEMO_DRIVER_PASSWORD`, and `DEMO_PAS
 
 ## 60–90 second demo
 
-1. Open two private browser contexts at the local preview URL and sign in as the configured Driver and Passenger accounts. Reload once to show that each secure server identity persists independently.
+1. Open the public pitch at `/`, then use **Open Pudle** to enter `/app`. Open `/app` in two private browser contexts and sign in as the configured Driver and Passenger accounts. Reload once to show that each secure server identity persists independently.
 2. On Driver, enable the camera, record a short clip, stop and save it, then open Recordings to play and export the device-local video. Point out that only its metadata syncs.
 3. In Drive, tap **Share approximate location**, choose an observable road condition, review the rounded-location disclosure, and confirm the report. Show it in Passenger’s nearby feed, acknowledge it, then resolve it from Driver.
 4. In Ride, have Driver create an email-bound Passenger invite. Redeem it in Passenger, send a short message, and show it arrive through persisted polling.
-5. Ask Pudy what is displayed, then prepare a hazard report. Show that Pudy opens review but cannot share without confirmation.
+5. Tap **Enable voice**, say “Hey Pudy, what is displayed?”, then ask Pudy to prepare a hazard report. Show that recognition pauses while Pudy speaks and that report review opens but cannot share without confirmation. Foreground wake listening requires a visible, unlocked page; use text if speech recognition is unavailable.
 6. Open Privacy and sign out. Explain that sign-out stops media, revokes playback URLs, closes account-scoped storage, and prevents another account from seeing the clips.
 
 Without `GEMINI_API_KEY`, keep the cloud status visibly **Unconfigured** during the demo. If a credential is later supplied, disclose the provider terms before enabling periodic compressed-frame analysis; never imply that recordings or audio are uploaded.
 
 Automated Pudy component tests use controlled mock browser speech-recognition and synthesis objects to verify cancellation, stale-response suppression, synchronous start errors, and rejected actions. They are not evidence that a physical microphone or a specific browser vendor’s speech service works on a target phone; verify that separately on the presentation device.
+
+A compact release overview and presentation flow live in [`docs/SUBMISSION.md`](docs/SUBMISSION.md). It describes the product as implemented and does not assume any challenge-specific rules.
 
 ## Project structure
 

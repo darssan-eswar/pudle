@@ -14,6 +14,7 @@ export default defineConfig({
       'components/recording/**/*.test.tsx',
       'lib/client/app/**/*.test.{ts,tsx}',
       'components/app/**/*.test.tsx',
+      'app/**/*.test.tsx',
     ],
     restoreMocks: true,
   },
