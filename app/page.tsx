@@ -35,7 +35,7 @@ export default function LandingPage() {
       </nav>
 
       <section className="landing-hero" aria-labelledby="landing-title">
-        <p className="landing-kicker">Peer Updated Driving Logic Engine</p>
+        <p className="landing-kicker">Private dashcam · Voice companion</p>
         <h1 id="landing-title">A clearer view<br />of the road.</h1>
         <p className="landing-definition">
           Pudle turns your phone into a private dashcam with a voice companion.

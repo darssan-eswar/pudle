@@ -1,11 +1,12 @@
 {
-  "name": "Pudle — Peer Updated Driving Logic Engine",
+  "name": "Pudle",
   "short_name": "Pudle",
-  "description": "Privacy-first local road alerts for drivers.",
-  "start_url": "/",
+  "description": "A private dashcam with a voice companion.",
+  "start_url": "/app",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#090c09",
-  "theme_color": "#090c09",
+  "background_color": "#fbf7ef",
+  "theme_color": "#fbf7ef",
   "orientation": "any",
   "icons": [
     {

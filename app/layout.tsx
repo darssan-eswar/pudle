@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import { env } from 'cloudflare:workers';
 import { Geist, Geist_Mono } from 'next/font/google';
+import { publicOrigin } from '@/server/public-origin';
 import './globals.css';
 
 const geistSans = Geist({
@@ -12,10 +14,11 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
-export const metadata: Metadata = {
-  metadataBase: new URL('https://pudle-road-intelligence.ledarssan919276.chatgpt.site'),
-  title: 'Pudle — Peer Updated Driving Logic Engine',
-  description: 'Privacy-first road alerts with local capture and optional disclosed cloud analysis.',
+export function generateMetadata(): Metadata {
+  return {
+  metadataBase: publicOrigin(env.APP_ORIGIN),
+  title: 'Pudle — A clearer view of the road',
+  description: 'A private dashcam with Pudy, your voice companion. Record locally, share confirmed road reports, and keep in touch with your ride.',
   applicationName: 'Pudle',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
@@ -31,17 +34,18 @@ export const metadata: Metadata = {
     apple: '/apple-touch-icon.png',
   },
   openGraph: {
-    title: 'Pudle — Peer Updated Driving Logic Engine',
-    description: 'Turn any phone into a privacy-first road-intelligence node.',
+    title: 'Pudle — A clearer view of the road',
+    description: 'A private dashcam with a voice companion. Record locally and share confirmed road reports.',
     images: [{ url: '/og.png', width: 1730, height: 909, alt: 'Pudle privacy-first road intelligence network' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Pudle — Peer Updated Driving Logic Engine',
-    description: 'Turn any phone into a privacy-first road-intelligence node.',
+    title: 'Pudle — A clearer view of the road',
+    description: 'A private dashcam with a voice companion. Record locally and share confirmed road reports.',
     images: ['/og.png'],
   },
-};
+  };
+}
 
 export default function RootLayout({
   children,
