@@ -11,6 +11,7 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+npm run build:landing
 git diff --check
 ```
 
@@ -22,13 +23,14 @@ Final results:
 - Client tests: 83 passed across 17 files.
 - Total tests: 133 passed.
 - Production build: passed. Vinext emitted only the known non-failing client chunk-size advisory.
+- Public landing export: passed and generated the static landing HTML/CSS plus public icons in the ignored Vercel output directory.
 - Diff whitespace check: passed.
 
 Automated Pudy tests use controlled mock `SpeechRecognition`, `SpeechSynthesisUtterance`, and speech-synthesis objects. They verify cancellation on stop, hidden tab, and unmount; suppression of stale and superseded action responses; synchronous recognition-start errors; and rejected actions. They do not prove physical microphone capture or a browser vendor's transcription service.
 
 Route regressions render both entry points: `/` contains the public product pitch and CTAs into `/app`; `/app` retains authenticated session restoration and the complete product lifecycle.
 
-Release wiring adds a separate Vercel reverse-proxy configuration under `deploy/vercel`, explicitly uncached API responses, configured canonical metadata, and a PWA launch path of `/app`. The canonical-origin tests reject malformed, credential-bearing, and insecure public URLs. Hosting status must be verified separately from these local checks.
+Release wiring adds a static public landing export and a separate Vercel gateway configuration under `deploy/vercel`. Only `/app`, authenticated APIs, and Vinext assets are proxied to the Worker; API responses are explicitly uncached. Canonical metadata is configuration-derived, and the PWA launches at `/app`. The canonical-origin tests reject malformed, credential-bearing, and insecure public URLs. Hosting status must be verified separately from these local checks.
 
 ## Browser-tested at `http://localhost:4173`
 
