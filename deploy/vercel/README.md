@@ -1,19 +1,41 @@
-# Vercel entry point
+# Vercel landing and app entry
 
-This directory deploys a public static landing page and a Vercel reverse proxy for the existing Pudle Worker. The static page reuses `app/page.tsx`; it contains no authenticated data or client JavaScript. The Worker serves the app at `/app` and the authenticated API at `/api`. D1 remains attached to the Worker; the Vercel deployment does not contain a second database or copies of private media.
+This directory serves the public landing page and forwards app/API requests to the existing Pudle Worker. It does not contain a database or private recordings.
 
-Deploy this directory, not the repository root. The root build targets Cloudflare Workers and cannot be treated as a standard Next.js Vercel build.
+[Current deployment and access status](../../docs/DEPLOYMENT.md)
 
-Run `npm run build` and `npm run build:landing` from the repository root before deploying this directory. Generated landing assets are ignored by Git but included in the Vercel upload using `.vercelignore`. The assigned public landing address is `https://pudle-demo.vercel.app`; `pudle.vercel.app` was unavailable. If that address changes, update the static canonical URL in `scripts/build-landing.ts`.
+## Build from the repository root
 
-Before public release:
+```bash
+npm ci
+npm run build
+npm run build:landing
+```
 
-1. Deploy the matching repository revision through the existing Sites project and verify its migrations.
-2. Confirm the owner authorizes public access to the hosted app. Keep application authentication enabled.
-3. Set the Worker's `APP_ORIGIN` to the exact assigned public HTTPS Vercel origin. Do not trust arbitrary forwarded host headers or wildcard origins.
-4. Keep `DEMO_MODE=false` in the public environment. Configure `GEMINI_API_KEY` as a Worker secret for live cloud analysis; it must not be placed in this directory or browser code.
-5. Verify sign-up, cookie session restoration, two-account isolation, reports, messages, and opt-in analysis through the Vercel address. Keep API and authenticated responses uncached.
+The export reuses `app/page.tsx` and the production stylesheet. It writes static HTML, CSS, and icons under `public/`. Those generated files are ignored by Git and included in the Vercel upload through `.vercelignore`.
 
-Vercel may assign a fallback hostname if `pudle.vercel.app` is already in use. Use the hostname returned by the actual deployment. A production alias is not proof of a functioning upstream deployment.
+## Publish
 
-Reference: https://vercel.com/docs/routing/rewrites
+After verifying the source revision and build:
+
+```bash
+cd deploy/vercel
+vercel link --project pudle --scope darssan-eswars-projects
+vercel deploy --prod --scope darssan-eswars-projects
+```
+
+Run the CLI from this directory, not the repository root. The root build targets a Cloudflare Worker; it is not a standard Next.js Vercel deployment.
+
+The current public address is [pudle-demo.vercel.app](https://pudle-demo.vercel.app). If it changes, update the canonical URL in `scripts/build-landing.ts` and the backend's trusted origin.
+
+## Routing and secrets
+
+- `/` and the landing assets are static.
+- `/app`, `/api`, and `/_next` forward to the existing Worker.
+- API responses and external rewrites are not cached.
+- The backend audience is managed in Sites. Publishing this directory does not make the private app public.
+- Keep provider credentials in the Worker runtime. Never put them in this directory or in client-prefixed environment variables.
+
+Deploy a matching Worker revision before an application release. Follow the [deployment checklist](../../docs/DEPLOYMENT.md) for access, origin, database, and two-user checks.
+
+Reference: [Vercel rewrites](https://vercel.com/docs/routing/rewrites).
