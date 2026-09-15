@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import LandingPage from '../app/page';
+import LandingPage from '../src/app/page';
 
 // Reuse the product pitch; never export authenticated HTML or app data.
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');

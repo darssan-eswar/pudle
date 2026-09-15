@@ -4,17 +4,17 @@ import { fileURLToPath } from 'node:url';
 export default defineConfig({
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('.', import.meta.url)),
+      '@': fileURLToPath(new URL('./src/', import.meta.url)),
     },
   },
   test: {
     environment: 'jsdom',
     include: [
-      'lib/client/recording/**/*.test.{ts,tsx}',
-      'components/recording/**/*.test.tsx',
-      'lib/client/app/**/*.test.{ts,tsx}',
-      'components/app/**/*.test.tsx',
-      'app/**/*.test.tsx',
+      'src/lib/client/recording/**/*.test.{ts,tsx}',
+      'src/components/recording/**/*.test.tsx',
+      'src/lib/client/app/**/*.test.{ts,tsx}',
+      'src/components/app/**/*.test.tsx',
+      'src/app/**/*.test.tsx',
     ],
     restoreMocks: true,
   },

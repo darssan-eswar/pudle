@@ -37,6 +37,7 @@ Follow [local setup](docs/SETUP.md) to create an isolated database, start the ap
 
 | Component | Responsibility |
 |---|---|
+| `src/` | Vinext routes, React components, browser libraries, server services, D1 schema, and application styles |
 | Browser | Camera, local clips, optional on-device detection, Pudy voice/text controls |
 | Vercel | Static landing page; forwards app and API requests to the Worker |
 | Cloudflare Worker and D1, hosted through Sites | Authentication, per-user metadata, reports, rides, messages, and optional analysis requests |

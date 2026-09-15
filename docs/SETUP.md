@@ -53,7 +53,7 @@ Demo mode adds **Use demo area**, a fixed, labeled coarse location shared by bot
 
 ## Optional cloud analysis
 
-Set `GEMINI_API_KEY` only in the server environment and restart the local server. `GEMINI_MODEL` can override the model configured in [the provider contracts](../server/analysis/contracts.ts). Confirm the selected model is available to the provider account before testing it.
+Set `GEMINI_API_KEY` only in the server environment and restart the local server. `GEMINI_MODEL` can override the model configured in [the provider contracts](../src/server/analysis/contracts.ts). Confirm the selected model is available to the provider account before testing it.
 
 Without a key, the app shows **Unconfigured** and the analysis route returns `provider_unconfigured`. Recording, reports, ride messages, and Pudy text commands remain available.
 
@@ -75,7 +75,7 @@ Read [the privacy guide](PRIVACY.md) before sending frames. Start provider check
 
 ## Database changes
 
-Edit `db/schema.ts`, generate the migration, and review the SQL before applying it:
+Edit `src/db/schema.ts`, generate the migration, and review the SQL before applying it:
 
 ```bash
 npm run db:generate

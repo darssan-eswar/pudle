@@ -23,7 +23,7 @@ The current project has `pudle-demo.vercel.app` and the automatically assigned `
 
 Vercel serves the static landing page. Requests for `/app`, `/api`, and `/_next` are forwarded to the existing Cloudflare Worker. D1 stays attached to that Worker; there is no separate Vercel database.
 
-The public landing is rendered from `app/page.tsx` without app account data or client JavaScript. The full app still runs on the Worker. API responses are marked private and non-cacheable, and rewrite caching is disabled.
+The public landing is rendered from `src/app/page.tsx` without app account data or client JavaScript. The full app still runs on the Worker. API responses are marked private and non-cacheable, and rewrite caching is disabled.
 
 Configuration: [Vercel gateway](../deploy/vercel/vercel.json), [landing export](../scripts/build-landing.ts), [Sites project](../.openai/hosting.json).
 

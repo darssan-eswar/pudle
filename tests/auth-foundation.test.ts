@@ -5,14 +5,14 @@ import {
   type AuthStore,
   type SessionRecord,
   type UserRecord,
-} from '../server/auth/contracts';
-import { createAuthService } from '../server/auth/service';
-import { requireAuthenticatedUser, requireMembership } from '../server/auth/authorization';
-import { HttpError, readJsonObject } from '../server/http';
-import { authorizeDemoReset, isDemoMode } from '../server/demo';
-import { requireMutationOrigin, sha256 } from '../server/security';
-import { signedOutResponse } from '../server/auth/route-helpers';
-import { clearSessionCookie, sessionCookie } from '../server/auth/cookies';
+} from '../src/server/auth/contracts';
+import { createAuthService } from '../src/server/auth/service';
+import { requireAuthenticatedUser, requireMembership } from '../src/server/auth/authorization';
+import { HttpError, readJsonObject } from '../src/server/http';
+import { authorizeDemoReset, isDemoMode } from '../src/server/demo';
+import { requireMutationOrigin, sha256 } from '../src/server/security';
+import { signedOutResponse } from '../src/server/auth/route-helpers';
+import { clearSessionCookie, sessionCookie } from '../src/server/auth/cookies';
 
 class MemoryAuthStore implements AuthStore {
   users = new Map<string, UserRecord>();
