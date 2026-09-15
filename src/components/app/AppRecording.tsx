@@ -25,14 +25,16 @@ import {
   type CloudAnalysisState,
 } from '@/lib/client/app';
 import {
+  createCocoSsdAdapter,
+  LOCAL_INFERENCE_MIN_INTERVAL_MS,
+  LocalInferenceScheduler,
+  type LocalInferenceState,
+} from '@/lib/client/inference';
+import {
   PudleButton,
   PudlePrivacyNotice,
   PudleStatusBadge,
 } from '@/components/pudle';
-
-type Detector = {
-  detect(video: HTMLVideoElement): Promise<Array<{ class: string; score: number }>>;
-};
 
 export interface AppRecordingHandle {
   stopMedia(): void;
@@ -80,6 +82,19 @@ function cloudTone(
   return 'danger';
 }
 
+function localInferenceLabel(inference: LocalInferenceState): string {
+  switch (inference.status) {
+    case 'capability':
+      return inference.capability.supported ? 'Not loaded' : 'Unsupported';
+    case 'loading':
+      return 'Loading';
+    case 'ready':
+      return 'Ready locally';
+    case 'error':
+      return 'Unavailable';
+  }
+}
+
 export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
   function AppRecording(
     { account, activeSection, online, onSceneChange, onCloudAnalysisChange, onRecordingStateChange },
@@ -87,15 +102,30 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
   ) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const replayVideoRef = useRef<HTMLVideoElement>(null);
-    const detectorRef = useRef<Detector | undefined>(undefined);
-    const detectionTimer = useRef<number | undefined>(undefined);
     const replayRef = useRef<ReplayInput | undefined>(undefined);
     const [libraryRevision, setLibraryRevision] = useState(0);
     const [replay, setReplay] = useState<ReplayInput>();
     const [replayError, setReplayError] = useState('');
     const serverMetadataIds = useRef(new Map<string, string>());
     const [metadataStatus, setMetadataStatus] = useState<'loading' | 'synced' | 'error'>('loading');
-    const [inference, setInference] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
+    const sceneChangeRef = useRef(onSceneChange);
+    sceneChangeRef.current = onSceneChange;
+    const [inference, setInference] = useState<LocalInferenceState>(() => ({
+      status: 'capability',
+      capability: { supported: true },
+    }));
+    const [pageVisible, setPageVisible] = useState(true);
+    const [localRunner] = useState(
+      () =>
+        new LocalInferenceScheduler(createCocoSsdAdapter(), {
+          onState: setInference,
+          onResult: (result) => {
+            sceneChangeRef.current(
+              result.observations.map((observation) => observation.label),
+            );
+          },
+        }),
+    );
     const [cloud, setCloud] = useState<CloudAnalysisState>(
       cloudAnalysisClient.unconfigured,
     );
@@ -287,54 +317,49 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
     useEffect(() => () => cloudRunner.disable(), [cloudRunner]);
 
     const stopDetection = useCallback(() => {
-      if (detectionTimer.current !== undefined) {
-        window.clearInterval(detectionTimer.current);
-        detectionTimer.current = undefined;
-      }
-      detectorRef.current = undefined;
-      onSceneChange([]);
-      setInference('idle');
-    }, [onSceneChange]);
+      localRunner.stop();
+      sceneChangeRef.current([]);
+    }, [localRunner]);
 
     useEffect(() => {
-      if (!controller.stream) return;
+      const onVisibilityChange = () => {
+        const visible = document.visibilityState !== 'hidden';
+        if (!visible) stopDetection();
+        setPageVisible(visible);
+      };
+      queueMicrotask(onVisibilityChange);
+      document.addEventListener('visibilitychange', onVisibilityChange);
+      return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+    }, [stopDetection]);
+
+    useEffect(() => {
+      if (!controller.stream || !pageVisible || activeSection !== 'drive') {
+        stopDetection();
+        return;
+      }
       let cancelled = false;
-      setInference('loading');
-      void Promise.all([
-        import('@tensorflow/tfjs'),
-        import('@tensorflow-models/coco-ssd'),
-      ])
-        .then(async ([tf, coco]) => {
-          await tf.ready();
-          const detector = await coco.load({ base: 'lite_mobilenet_v2' });
-          if (cancelled) return;
-          detectorRef.current = detector;
-          setInference('ready');
-          detectionTimer.current = window.setInterval(() => {
-            const video = videoRef.current;
-            if (!video || video.readyState < 2 || !detectorRef.current) return;
-            void detectorRef.current.detect(video).then((items) => {
-              if (!cancelled) {
-                onSceneChange(
-                  items
-                    .filter((item) => item.score >= 0.6)
-                    .slice(0, 4)
-                    .map((item) => item.class),
-                );
-              }
-            }).catch(() => {
-              if (!cancelled) setInference('unavailable');
-            });
-          }, 1500);
-        })
-        .catch(() => {
-          if (!cancelled) setInference('unavailable');
-        });
+      let timer: number | undefined;
+      void localRunner.start().then((ready) => {
+        if (!ready || cancelled) return;
+        const tick = () => {
+          const video = videoRef.current;
+          if (
+            !video
+            || video.readyState < 2
+            || !video.videoWidth
+            || !video.videoHeight
+          ) return;
+          void localRunner.run(video, Date.now());
+        };
+        tick();
+        timer = window.setInterval(tick, LOCAL_INFERENCE_MIN_INTERVAL_MS);
+      });
       return () => {
         cancelled = true;
+        if (timer !== undefined) window.clearInterval(timer);
         stopDetection();
       };
-    }, [controller.stream, onSceneChange, stopDetection]);
+    }, [activeSection, controller.stream, localRunner, pageVisible, stopDetection]);
 
     const revokeTrackedUrls = useCallback(() => {
       replayRef.current?.revoke();
@@ -546,11 +571,23 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
           <section className="pudle-card">
             <div className="pudle-panel-header">
               <div><p className="pudle-eyebrow">Optional · downloaded after camera starts</p><h2>Local scene detection</h2></div>
-              <PudleStatusBadge tone={inference === 'ready' ? 'positive' : inference === 'unavailable' ? 'warning' : 'neutral'}>
-                {inference === 'loading' ? 'Loading' : inference === 'ready' ? 'Ready locally' : inference === 'unavailable' ? 'Unavailable' : 'Not loaded'}
+              <PudleStatusBadge tone={inference.status === 'ready' ? 'positive' : inference.status === 'error' ? 'warning' : 'neutral'}>
+                {localInferenceLabel(inference)}
               </PudleStatusBadge>
             </div>
-            <p className="pudle-muted">Camera and manual reporting remain available if the optional model cannot load.</p>
+            <p className="pudle-muted">
+              {inference.status === 'error'
+                ? inference.message
+                : 'Camera and manual reporting remain available if the optional model cannot load.'}
+            </p>
+            {inference.status === 'ready' ? (
+              <p className="pudle-disclosure">
+                {inference.source} · {inference.model}
+                {inference.result
+                  ? ` · last frame ${new Date(inference.result.capturedAt).toLocaleTimeString()} · ${Math.round(inference.result.latencyMs)} ms`
+                  : ' · waiting for a current frame'}
+              </p>
+            ) : null}
           </section>
         </div>
 

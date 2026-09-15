@@ -13,6 +13,7 @@ export default defineConfig({
       'src/lib/client/recording/**/*.test.{ts,tsx}',
       'src/components/recording/**/*.test.tsx',
       'src/lib/client/app/**/*.test.{ts,tsx}',
+      'src/lib/client/inference/**/*.test.ts',
       'src/components/app/**/*.test.tsx',
       'src/app/**/*.test.tsx',
     ],

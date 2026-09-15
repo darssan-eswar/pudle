@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply site-creator-d1 --config wrangler.local.jsonc --local",
+    "evaluate:local-model": "node --import tsx scripts/evaluate-local-model.ts",
     "test": "npm run test:server && npm run test:client",
     "test:server": "tsx --test tests/**/*.test.ts",
     "test:client": "vitest run"

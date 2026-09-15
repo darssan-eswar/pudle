@@ -20,6 +20,7 @@ See [deployment status and release gates](docs/DEPLOYMENT.md) for the current UR
 - Supports invite-only rides with email-bound invitations and persisted text messages.
 - Lets Pudy answer from displayed observations, save a clip, stop recording, or prepare a report. Sharing still requires confirmation.
 - Offers optional on-device object detection and a separately consented cloud-analysis path for compressed still frames.
+- Runs local model work through a single-flight scheduler with explicit capability, loading, ready, and error states.
 
 Reports and model output can be wrong. Pudle is not a navigation system or a safety guarantee. Use the demo while parked or as a passenger.
 
@@ -56,6 +57,7 @@ The app uses Vinext, React, TypeScript, Drizzle, Web Crypto, TensorFlow.js, and 
 | [Deployment](docs/DEPLOYMENT.md) | Live addresses, hosting split, release process, remaining gates |
 | [Privacy](docs/PRIVACY.md) | Recordings, location, microphone processing, cloud frames, retention |
 | [Verification](docs/VERIFIED.md) | Test results, browser checks, and what has not been verified |
+| [Local models](docs/LOCAL_MODELS.md) | Portable inference contract, COCO-SSD integration, evaluation limits |
 | [Demo guide](docs/SUBMISSION.md) | Problem, solution, recording sequence, submission checklist |
 | [Implementation status](docs/IMPLEMENTATION_PLAN.md) | Delivered work and unfinished release checks |
 | [Roadmap](docs/ROADMAP.md) | Later ideas, clearly separate from the MVP |
@@ -68,9 +70,10 @@ npm run typecheck
 npm test
 npm run build
 npm run build:landing
+npm run evaluate:local-model
 ```
 
-GitHub Actions runs these checks for pull requests and pushes to `main`. The September 14 release passed 133 tests: 50 server tests and 83 client tests. See [verification evidence](docs/VERIFIED.md).
+GitHub Actions runs these checks for pull requests and pushes to `main`. The local-model foundation passes 142 tests: 50 server tests and 92 client tests. See [verification evidence](docs/VERIFIED.md).
 
 ## Contributing and submission
 

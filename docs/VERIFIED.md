@@ -20,10 +20,11 @@ Release results:
 - ESLint: passed.
 - TypeScript: passed.
 - Server tests: 50 passed.
-- Client tests: 83 passed across 17 files.
-- Total tests: 133 passed.
+- Client tests: 92 passed across 20 files.
+- Total tests: 142 passed.
 - Production build: passed. Vinext emitted only the known non-failing client chunk-size advisory.
 - Public landing export: passed and generated the static landing HTML/CSS plus public icons in the ignored Vercel output directory.
+- Synthetic local-model evaluation: passed with bounded fixture validation and measured per-fixture latency. These fixtures validate software behavior, not road-scene accuracy.
 - Diff whitespace check: passed.
 
 Automated Pudy tests use controlled mock `SpeechRecognition`, `SpeechSynthesisUtterance`, and speech-synthesis objects. They verify cancellation on stop, hidden tab, and unmount; suppression of stale and superseded action responses; synchronous recognition-start errors; and rejected actions. They do not prove physical microphone capture or a browser vendor's transcription service.
