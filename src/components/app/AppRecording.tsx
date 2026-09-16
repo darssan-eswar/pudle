@@ -735,8 +735,8 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
                   onChange={(event) => setSmolVlmConsent(event.target.checked)}
                 />
                 <span>
-                  Download approximately 260 MB of pinned model weights plus runtime files
-                  from Hugging Face. The browser may cache model files. No camera frame is
+                  Download approximately 260 MB of pinned model weights from Hugging Face,
+                  plus runtime files from jsDelivr. The browser may cache these files. No camera frame is
                   uploaded or persisted by Pudle.
                 </span>
               </label>

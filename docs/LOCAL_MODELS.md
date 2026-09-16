@@ -35,6 +35,12 @@ files; actual transfer and browser-cache usage vary. Progress is shown while
 files load. Browser caching can retain public model artifacts, but Pudle does
 not put camera pixels in that cache.
 
+Transformers.js loads its ONNX WASM/runtime files from jsDelivr using the exact
+`onnxruntime-web` version in the lockfile. The build pins fallback URLs to that
+same location instead of packaging a redundant WASM file over the host's 25 MiB
+asset limit. Runtime downloads contain public code, not camera data. The build
+checks all emitted static asset sizes before packaging.
+
 After loading:
 
 - generation occurs only after **Describe frame** is tapped;

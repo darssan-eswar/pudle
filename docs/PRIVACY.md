@@ -11,7 +11,8 @@ Signing out stops active media and closes the account's storage access; it does 
 Optional object detection runs on the device. Pudle does not identify faces, read plates, identify vehicle owners, or infer intoxication, intent, or culpability.
 
 The optional local SmolVLM prototype downloads public model artifacts from
-Hugging Face only after separate consent. Artifacts may remain in the browser's
+Hugging Face and version-pinned runtime files from jsDelivr only after separate
+consent. Artifacts may remain in the browser's
 model cache. Described frames are transferred to a local worker, not that cache
 or a cloud provider. Descriptions can still be wrong; filtering prohibited
 claims is not a guarantee against hallucination.
