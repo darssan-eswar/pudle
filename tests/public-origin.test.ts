@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { publicOrigin } from '../server/public-origin';
+import { publicOrigin } from '../src/server/public-origin';
 
 test('canonical origin uses configured HTTPS origin and strips paths', () => {
   assert.equal(publicOrigin('https://pudle.vercel.app/app?q=1').href, 'https://pudle.vercel.app/');

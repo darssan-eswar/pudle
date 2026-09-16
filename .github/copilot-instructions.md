@@ -17,12 +17,13 @@ Prefer small composable functions, explicit TypeScript types, and progressive en
 
 ## Repository map
 
-- `app/page.tsx`: public landing page; preserve it when changing the authenticated app.
-- `app/app/page.tsx` and `components/app/`: authenticated camera, recordings, reports, rides, privacy, and Pudy controls.
-- `app/api/events/route.ts`: validated event creation and two-mile nearby-event queries.
-- `app/api/analysis/` and `server/analysis/`: existing still-frame analysis API and server-only Gemini REST adapter.
-- `app/globals.css`: responsive application styles.
-- `db/`: Cloudflare D1 access and Drizzle schema.
+- `src/app/page.tsx`: public landing page; preserve it when changing the authenticated app.
+- `src/app/app/page.tsx` and `src/components/app/`: authenticated camera, recordings, reports, rides, privacy, and Pudy controls.
+- `src/app/api/events/route.ts`: validated event creation and two-mile nearby-event queries.
+- `src/app/api/analysis/` and `src/server/analysis/`: existing still-frame analysis API and server-only Gemini REST adapter.
+- `src/lib/client/inference/`: portable local-model contract, COCO-SSD adapter, bounded scheduler, and synthetic evaluation harness.
+- `src/app/globals.css`: responsive application styles.
+- `src/db/`: Cloudflare D1 access and Drizzle schema.
 - `drizzle/`: generated SQLite migrations and metadata.
 - `public/`: installable-site and social assets.
 - `scripts/build-landing.ts` and `deploy/vercel/`: static landing export and gateway to the Worker.
@@ -41,7 +42,7 @@ npm ci
 
 Follow `docs/SETUP.md` to select isolated local state, apply local migrations, and start the server. Do not reset a shared database or enable demo reset in production.
 
-`db/schema.ts` is the source of truth for database shape. After an intentional schema change, run `npm run db:generate` and review the generated migration before committing it. Never commit local Wrangler state or database contents.
+`src/db/schema.ts` is the source of truth for database shape. After an intentional schema change, run `npm run db:generate` and review the generated migration before committing it. Never commit local Wrangler state or database contents.
 
 ## Required validation
 

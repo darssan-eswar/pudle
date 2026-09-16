@@ -26,6 +26,8 @@ import {
   type PudyAssistantHandle,
 } from '@/components/app';
 import { AppRide } from '@/components/app/AppRide';
+import { TripInterests } from '@/components/app/TripInterests';
+import { TripMemory } from '@/lib/client/app/trip-memory';
 import { RecordingAccountSession } from '@/lib/client/recording';
 import {
   authApi,
@@ -68,6 +70,9 @@ function AuthenticatedApp({
   const [signOutError, setSignOutError] = useState('');
   const [assistantEnabled, setAssistantEnabled] = useState(true);
   const [demoModeEnabled, setDemoModeEnabled] = useState(false);
+  const [tripMemory] = useState(() => new TripMemory());
+  const [tripRevision, setTripRevision] = useState(0);
+  const updateTrip = useCallback(() => setTripRevision((n) => n + 1), []);
 
   const account = useMemo(
     () => new RecordingAccountSession({ ownerId: user.id }),
@@ -115,14 +120,21 @@ function AuthenticatedApp({
   );
 
   const handlePudyAction = useCallback(async (action: PudyAction) => {
+    if (action === 'remember-fuel-prices' || action === 'remember-charging') {
+      const topic = action === 'remember-fuel-prices' ? 'fuel-prices' : 'charging';
+      tripMemory.remember(topic);
+      updateTrip();
+      return `I'll remember ${topic === 'charging' ? 'EV charging' : 'fuel prices'} as an interest in this tab. You can keep confirmed notes in Profile while parked. Automatic monitoring is not enabled.`;
+    }
     if (action === 'prepare-hazard-report') {
       setReportPrepared(true);
       return 'A road report is prepared. Review the observed condition and confirm it on screen before anything is shared.';
     }
     return stopRecordingForPudy(recordingRef.current);
-  }, []);
+  }, [tripMemory, updateTrip]);
 
   const disposeSession = useCallback(async () => {
+    tripMemory.clear();
     setAssistantEnabled(false);
     pudyRef.current?.stop();
     await disposeLocalSession({
@@ -139,7 +151,7 @@ function AuthenticatedApp({
         setReportPrepared(false);
       },
     });
-  }, [account]);
+  }, [account, tripMemory]);
 
   useEffect(() => {
     function sessionExpired() {
@@ -246,6 +258,7 @@ function AuthenticatedApp({
 
       {activeSection === 'profile' ? (
         <div className="pudle-profile">
+          <TripInterests memory={tripMemory} revision={tripRevision} onChange={updateTrip} />
           <section className="pudle-card" aria-labelledby="app-profile-title">
             <p className="pudle-eyebrow">Profile</p>
             <h1 id="app-profile-title">{user.displayName}</h1>

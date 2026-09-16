@@ -90,6 +90,13 @@ select:focus-visible {
   margin: 0;
 }
 
+.pudle-trip-interests,
+.pudle-trip-note {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px;
+}
+
 .pudle-field select {
   width: 100%;
   min-height: 48px;
@@ -665,6 +672,22 @@ select:focus-visible {
 .pudle-analysis-result time {
   color: var(--pudle-muted);
   font-size: 0.8rem;
+}
+
+.pudle-model-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.pudle-model-progress progress {
+  width: 100%;
+  height: 12px;
+  accent-color: var(--pudle-ink);
+}
+
+.pudle-model-progress small {
+  color: var(--pudle-muted);
+  overflow-wrap: anywhere;
 }
 
 /* AppRide is intentionally isolated from the shared demo ride component. */

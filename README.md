@@ -20,6 +20,10 @@ See [deployment status and release gates](docs/DEPLOYMENT.md) for the current UR
 - Supports invite-only rides with email-bound invitations and persisted text messages.
 - Lets Pudy answer from displayed observations, save a clip, stop recording, or prepare a report. Sharing still requires confirmation.
 - Offers optional on-device object detection and a separately consented cloud-analysis path for compressed still frames.
+- Runs COCO-SSD through a single-flight scheduler and offers a separately consented,
+  manual SmolVLM frame description prototype on supported WebGPU devices.
+- Remembers explicit fuel-price/charging interests and confirmed notes temporarily
+  in the current tab. Profile includes expiry details and a clear-memory control.
 
 Reports and model output can be wrong. Pudle is not a navigation system or a safety guarantee. Use the demo while parked or as a passenger.
 
@@ -37,6 +41,7 @@ Follow [local setup](docs/SETUP.md) to create an isolated database, start the ap
 
 | Component | Responsibility |
 |---|---|
+| `src/` | Vinext routes, React components, browser libraries, server services, D1 schema, and application styles |
 | Browser | Camera, local clips, optional on-device detection, Pudy voice/text controls |
 | Vercel | Static landing page; forwards app and API requests to the Worker |
 | Cloudflare Worker and D1, hosted through Sites | Authentication, per-user metadata, reports, rides, messages, and optional analysis requests |
@@ -44,7 +49,9 @@ Follow [local setup](docs/SETUP.md) to create an isolated database, start the ap
 
 There is one backend database. Vercel does not hold a second copy of it, and the server does not store recording files. [Data handling and retention](docs/PRIVACY.md)
 
-The app uses Vinext, React, TypeScript, Drizzle, Web Crypto, TensorFlow.js, and COCO-SSD. Pudy's current commands do not require a language-model API.
+The app uses Vinext, React, TypeScript, Drizzle, Web Crypto, TensorFlow.js,
+COCO-SSD, and a pinned Transformers.js runtime for the optional local SmolVLM
+prototype. Pudy's current commands do not require a language-model API.
 
 ## Documentation
 
@@ -55,9 +62,11 @@ The app uses Vinext, React, TypeScript, Drizzle, Web Crypto, TensorFlow.js, and 
 | [Deployment](docs/DEPLOYMENT.md) | Live addresses, hosting split, release process, remaining gates |
 | [Privacy](docs/PRIVACY.md) | Recordings, location, microphone processing, cloud frames, retention |
 | [Verification](docs/VERIFIED.md) | Test results, browser checks, and what has not been verified |
+| [Local models](docs/LOCAL_MODELS.md) | Portable inference contract, COCO-SSD integration, evaluation limits |
 | [Demo guide](docs/SUBMISSION.md) | Problem, solution, recording sequence, submission checklist |
 | [Implementation status](docs/IMPLEMENTATION_PLAN.md) | Delivered work and unfinished release checks |
 | [Roadmap](docs/ROADMAP.md) | Later ideas, clearly separate from the MVP |
+| [Edge research](research/README.md) | Abstract, model shortlist, benchmark proposal, and staged convoy trial |
 
 ## Checks
 
@@ -67,9 +76,22 @@ npm run typecheck
 npm test
 npm run build
 npm run build:landing
+npm run evaluate:local-model
+npm run smoke:smolvlm
+npm run smoke:smolvlm -- --offline
+npm run benchmark:metadata -- research/fixtures/synthetic-predictions.json
 ```
 
-GitHub Actions runs these checks for pull requests and pushes to `main`. The September 14 release passed 133 tests: 50 server tests and 83 client tests. See [verification evidence](docs/VERIFIED.md).
+`smoke:smolvlm` downloads the real pinned model into the ignored
+`.cache/pudle-models/` directory and runs generated, nonprivate pixels on CPU.
+It can take several minutes and verifies execution, not road accuracy. GitHub
+Actions runs the standard checks for pull requests and pushes to `main`. See
+[verification evidence](docs/VERIFIED.md).
+
+The metadata fixture contains fabricated predictions and latencies. It checks
+the scorer, not a model's accuracy. Native background “Hey Pudy,” Bluetooth
+peer networking, LoRa/Sidewalk hardware, live Gemini, and the 50–80-driver trial
+remain release dependencies; see the [staged roadmap](research/ROADMAP.md).
 
 ## Contributing and submission
 

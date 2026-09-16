@@ -12,7 +12,7 @@ npm run build
 npm run build:landing
 ```
 
-The export reuses `app/page.tsx` and the production stylesheet. It writes static HTML, CSS, and icons under `public/`. Those generated files are ignored by Git and included in the Vercel upload through `.vercelignore`.
+The export reuses `src/app/page.tsx` and the production stylesheet. It writes static HTML, CSS, and icons under `public/`. Those generated files are ignored by Git and included in the Vercel upload through `.vercelignore`.
 
 ## Publish
 

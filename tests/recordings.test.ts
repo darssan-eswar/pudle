@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { RecordingStore, StoredRecording } from '../server/recordings/contracts';
-import { createRecordingService } from '../server/recordings/service';
-import { HttpError } from '../server/http';
+import type { RecordingStore, StoredRecording } from '../src/server/recordings/contracts';
+import { createRecordingService } from '../src/server/recordings/service';
+import { HttpError } from '../src/server/http';
 
 const NOW = 1_800_000_000_000;
 

@@ -3,6 +3,7 @@ import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
 import { defineConfig } from 'vite';
 import hostingConfig from './.openai/hosting.json';
+import { workerRuntimeCompatibility } from './scripts/worker-runtime';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   '00000000-0000-4000-8000-000000000000';
@@ -60,11 +61,15 @@ export default defineConfig(async () => {
   const { cloudflare } = await import('@cloudflare/vite-plugin');
 
   return {
+    // Prebundle the model runtime; the scoped compatibility hook below keeps
+    // Vite's dynamic-import helper from loading page-only HMR in its worker.
+    optimizeDeps: { include: ['@huggingface/transformers'] },
     css: { postcss: { plugins: [tailwindcss()] } },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
     plugins: [
+      workerRuntimeCompatibility(),
       vinext(),
       sites(),
       cloudflare({

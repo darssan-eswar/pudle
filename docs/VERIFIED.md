@@ -1,6 +1,8 @@
 # Pudle MVP verification
 
-The local checks below ran on September 14, 2026 against isolated D1 state configured by `PUDLE_LOCAL_STATE_PATH`. Those checks did not reset or modify a shared database. The later hosted release applied production migrations separately, as recorded below.
+The latest automated checks ran on September 16, 2026. Earlier browser and hosted
+checks below are dated historical evidence, not a claim that the new model has
+been tested on a physical phone. Tests did not reset or modify a shared database.
 
 ## Automated checks
 
@@ -19,11 +21,26 @@ Release results:
 
 - ESLint: passed.
 - TypeScript: passed.
-- Server tests: 50 passed.
-- Client tests: 83 passed across 17 files.
-- Total tests: 133 passed.
+- Server tests: 52 passed.
+- Client tests: 107 passed across 24 files.
+- Total tests: 159 passed.
 - Production build: passed. Vinext emitted only the known non-failing client chunk-size advisory.
 - Public landing export: passed and generated the static landing HTML/CSS plus public icons in the ignored Vercel output directory.
+- Synthetic local-model evaluation: passed with bounded fixture validation and measured per-fixture latency. These fixtures validate software behavior, not road-scene accuracy.
+- Real SmolVLM smoke: the exact pinned `HuggingFaceTB/SmolVLM-256M-Instruct`
+  revision loaded through Transformers.js 4.3.0 and generated tokens from
+  nonprivate synthetic 64×64 pixels. On this development Mac, the warm-cache,
+  network-blocked CPU run loaded in 521 ms, inferred 16 tokens in 1,106 ms,
+  and observed process RSS of 952,369,152 bytes at its largest sample.
+  It made zero network attempts. This proves model execution only, not browser
+  WebGPU support, target-phone performance, semantic correctness, or road accuracy.
+- Full `npm audit`: zero known vulnerabilities, including development dependencies.
+  React/RSC, Vite, and Transformers.js were updated; targeted transitive overrides
+  cover image-size, sharp, undici, ws, and esbuild. Audit results are a dated
+  dependency check, not a guarantee of security.
+- Drizzle generation: no schema changes and no new migrations.
+- Metadata scoring CLI: passed on three explicitly synthetic cases. These are
+  fabricated predictions/latencies and are not comparative model results.
 - Diff whitespace check: passed.
 
 Automated Pudy tests use controlled mock `SpeechRecognition`, `SpeechSynthesisUtterance`, and speech-synthesis objects. They verify cancellation on stop, hidden tab, and unmount; suppression of stale and superseded action responses; synchronous recognition-start errors; and rejected actions. They do not prove physical microphone capture or a browser vendor's transcription service.
@@ -32,7 +49,34 @@ Route regressions render both entry points: `/` contains the public product pitc
 
 The release includes a static landing export and Vercel gateway under `deploy/vercel`. Only `/app`, APIs, and Vinext assets are proxied to the Worker; API responses are uncached. Worker metadata uses the configured origin, and the PWA launches at `/app`. Canonical-origin tests reject malformed, credential-bearing, and insecure public URLs. The static landing's canonical URL is set separately in `scripts/build-landing.ts`.
 
-## Hosted release checks
+## Browser checks — September 16
+
+- The stale preview rendered but sign-up returned 500. A restarted preview with
+  all six migrations in a fresh temporary local database returned 201 for a
+  synthetic QA signup and restored the authenticated session on reload.
+- Typed “Hey Pudy gas prices are important to me” enabled the fuel-price
+  interest in Profile. A labeled synthetic price note displayed its source and
+  expiry. Reload preserved the account session but cleared interests and notes.
+- At 390px, `clientWidth` and `scrollWidth` were both 390; no error overlay or
+  page error was observed in the Profile flow. No camera, microphone, location,
+  or production-account permission was used.
+- A real worker-construction check found Vinext rewriting `import.meta.url` to
+  a `file:` URL. The factory now uses a Vite worker URL import. A separate,
+  development-only compatibility hook replaces Vite's page-client import for
+  ONNX's URL-query helper; its scope and URL behavior have regression tests.
+- The exact compiled worker ran real WebGPU inference in isolated desktop
+  Chromium against generated 64×64 pixels: 20,049 ms model load and 2,532 ms
+  inference, with a nonempty result. The worker was terminated afterward.
+  This was a production-asset harness, not a physical camera, a phone test,
+  road accuracy, or evidence of safety. CPU and GPU timings used different
+  quantization/token budgets and are not a controlled speed comparison.
+- A fully network-disabled browser attempt could not restart the worker from
+  the static test origin (no model-ready event). Warm model artifacts alone
+  are insufficient to guarantee offline worker/bootstrap assets. Browser-wide
+  offline reload remains an open gate; the zero-network success above is the
+  Node CPU test, not a claim that a phone can reload the full app offline.
+
+## Previous hosted release checks — September 14
 
 The application source was `3e543e9a8bb2af4ef1cb779c08d81510b74d918d`, merged through [PR #1](https://github.com/darssan-eswar/pudle/pull/1). Both the [release PR check](https://github.com/darssan-eswar/pudle/actions/runs/34879715829) and [post-merge check](https://github.com/darssan-eswar/pudle/actions/runs/34879923448) passed.
 
@@ -44,7 +88,7 @@ The application source was `3e543e9a8bb2af4ef1cb779c08d81510b74d918d`, merged th
 
 These are deployment and sign-in-screen checks, not proof of the complete two-user flow on the public Vercel origin. That still depends on the access decision and a new live check. [Current hosting status](DEPLOYMENT.md)
 
-## Browser-tested at `http://localhost:4173`
+## Previous browser checks — September 14, `http://localhost:4173`
 
 - Fresh isolated Chromium profiles loaded the editorial landing page at `/` and the existing sign-in product shell at `/app`. A 500×900 phone-sized capture confirmed the landing hierarchy, CTAs, compact copy, and no visible horizontal clipping. No device permission or account credential was used for this route check.
 - Two independent browser contexts restored distinct Driver and Passenger server sessions.
@@ -63,6 +107,16 @@ These are deployment and sign-in-screen checks, not proof of the complete two-us
 ## Explicit verification limits
 
 - No `GEMINI_API_KEY` was supplied. No live Gemini request, paid upgrade, overage, or fixture presented as cloud output occurred.
+- The SmolVLM browser lifecycle is covered with controlled workers for consent,
+  unsupported capability, progress, single-flight generation, timeout,
+  prohibited output, and unload behavior. Physical-phone WebGPU memory, thermal,
+  battery, and road-clip quality gates remain unverified.
+- The earlier Transformers.js dependency advisories are resolved in the current
+  lockfile. Browser caching tests use controlled Cache API objects; zero-network
+  real inference was checked on Node CPU, not a physical phone browser.
+- A full offline page reload is not supported: there is no service-worker app
+  shell, and session restoration needs the backend. Cached model loading is a
+  separate capability. Trip memory is intentionally cleared on page reload.
 - Physical rear-camera quality, physical microphone capture, browser-vendor speech transcription, and audible device TTS still require a presentation-phone check. The media browser test used a synthetic video-only stream and uploaded no private media.
 - Export was triggered through the browser download control; the downloaded file was not opened outside the browser automation.
 - The production build still reports the existing client bundle chunk-size advisory.

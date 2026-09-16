@@ -8,13 +8,13 @@ import {
   type AnalysisResult,
   type AnalysisStore,
   type IdempotentResponse,
-} from '../server/analysis/contracts';
-import { GeminiProvider } from '../server/analysis/gemini-provider';
-import { readFrameRequest, validateFrame } from '../server/analysis/image';
-import { ROAD_ANALYSIS_PROMPT } from '../server/analysis/prompt';
-import { enforceAnalysisRateLimits } from '../server/analysis/rate-limit';
-import { createAnalysisService } from '../server/analysis/service';
-import { HttpError } from '../server/http';
+} from '../src/server/analysis/contracts';
+import { GeminiProvider } from '../src/server/analysis/gemini-provider';
+import { readFrameRequest, validateFrame } from '../src/server/analysis/image';
+import { ROAD_ANALYSIS_PROMPT } from '../src/server/analysis/prompt';
+import { enforceAnalysisRateLimits } from '../src/server/analysis/rate-limit';
+import { createAnalysisService } from '../src/server/analysis/service';
+import { HttpError } from '../src/server/http';
 
 const NOW = 1_800_000_000_000;
 

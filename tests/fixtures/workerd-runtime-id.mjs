@@ -1,4 +1,4 @@
-import { createRuntimeId } from '../../server/runtime-id.mjs';
+import { createRuntimeId } from '../../src/server/runtime-id.mjs';
 
 const worker = {
   fetch() {

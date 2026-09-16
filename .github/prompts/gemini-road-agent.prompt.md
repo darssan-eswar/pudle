@@ -4,7 +4,7 @@ description: Verify and improve Pudle's existing opt-in still-frame analysis.
 agent: privacy-backend
 ---
 
-Work on the existing analysis flow, not a new conversational API. Read `docs/API.md`, `docs/PRIVACY.md`, `docs/DEPLOYMENT.md`, and the current `server/analysis/` code before changing it.
+Work on the existing analysis flow, not a new conversational API. Read `docs/API.md`, `docs/PRIVACY.md`, `docs/DEPLOYMENT.md`, and the current `src/server/analysis/` code before changing it.
 
 The browser submits one bounded JPEG or WebP still to `POST /api/analysis` after separate consent. The Worker verifies the session, origin, CSRF header, frame format and dimensions, timestamp, rate limit, and idempotency key. The existing server-only Gemini REST adapter returns observation categories and confidence; Pudle validates them and generates its own summary text.
 

@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import test from 'node:test';
-import type { EventRecord, EventStore } from '../server/events/service';
-import { createEventService, EVENT_TTL_MS, parseCreateEvent } from '../server/events/service';
-import type { GroupsStore, GroupSummary, MessageRecord } from '../server/groups/service';
-import { createGroupsService, validateMessageBody } from '../server/groups/service';
-import { D1GroupsStore } from '../server/groups/d1-store';
-import { HttpError } from '../server/http';
+import type { EventRecord, EventStore } from '../src/server/events/service';
+import { createEventService, EVENT_TTL_MS, parseCreateEvent } from '../src/server/events/service';
+import type { GroupsStore, GroupSummary, MessageRecord } from '../src/server/groups/service';
+import { createGroupsService, validateMessageBody } from '../src/server/groups/service';
+import { D1GroupsStore } from '../src/server/groups/d1-store';
+import { HttpError } from '../src/server/http';
 
 async function expectStatus(action: () => Promise<unknown> | unknown, status: number) {
   await assert.rejects(
