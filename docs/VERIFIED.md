@@ -21,9 +21,9 @@ Release results:
 
 - ESLint: passed.
 - TypeScript: passed.
-- Server tests: 52 passed.
+- Server tests: 53 passed.
 - Client tests: 107 passed across 24 files.
-- Total tests: 159 passed.
+- Total tests: 160 passed.
 - Production build: passed. Vinext emitted only the known non-failing client chunk-size advisory.
 - Public landing export: passed and generated the static landing HTML/CSS plus public icons in the ignored Vercel output directory.
 - Synthetic local-model evaluation: passed with bounded fixture validation and measured per-fixture latency. These fixtures validate software behavior, not road-scene accuracy.
