@@ -70,6 +70,11 @@ The release includes a static landing export and Vercel gateway under `deploy/ve
   This was a production-asset harness, not a physical camera, a phone test,
   road accuracy, or evidence of safety. CPU and GPU timings used different
   quantization/token budgets and are not a controlled speed comparison.
+- A fully network-disabled browser attempt could not restart the worker from
+  the static test origin (no model-ready event). Warm model artifacts alone
+  are insufficient to guarantee offline worker/bootstrap assets. Browser-wide
+  offline reload remains an open gate; the zero-network success above is the
+  Node CPU test, not a claim that a phone can reload the full app offline.
 
 ## Previous hosted release checks — September 14
 
