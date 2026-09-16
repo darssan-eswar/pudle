@@ -7,7 +7,7 @@ const navItems: Array<{ id: PudleSection; label: string; glyph: string }> = [
   { id: "drive", label: "Drive", glyph: "◉" },
   { id: "recordings", label: "Recordings", glyph: "▤" },
   { id: "ride", label: "Ride", glyph: "⌁" },
-  { id: "profile", label: "Privacy", glyph: "◌" },
+  { id: "profile", label: "Profile", glyph: "◌" },
 ];
 
 export interface PudleShellProps {

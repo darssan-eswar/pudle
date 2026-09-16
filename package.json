@@ -15,17 +15,20 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply site-creator-d1 --config wrangler.local.jsonc --local",
     "evaluate:local-model": "node --import tsx scripts/evaluate-local-model.ts",
+    "smoke:smolvlm": "node --import tsx scripts/smoke-smolvlm.ts",
+    "benchmark:metadata": "node --import tsx scripts/benchmark-metadata.ts",
     "test": "npm run test:server && npm run test:client",
-    "test:server": "tsx --test tests/**/*.test.ts",
+    "test:server": "tsx --test tests/*.test.ts",
     "test:client": "vitest run"
   },
   "dependencies": {
+    "@huggingface/transformers": "4.3.0",
     "@tensorflow-models/coco-ssd": "^2.2.3",
     "@tensorflow/tfjs": "^4.22.0",
     "drizzle-orm": "0.45.2",
     "next": "16.3.5",
-    "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
@@ -43,14 +46,21 @@
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
     "miniflare": "4.20260515.0",
-    "react-server-dom-webpack": "19.2.6",
+    "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.2.1",
     "tsx": "4.23.13",
     "typescript": "5.9.3",
     "vinext": "1.0.0-beta.3",
-    "vite": "8.0.13",
+    "vite": "8.0.16",
     "vitest": "^4.1.11",
     "wrangler": "4.92.0"
+  },
+  "overrides": {
+    "image-size": "2.0.4",
+    "sharp": "0.35.4",
+    "undici": "7.29.1",
+    "ws": "8.21.3",
+    "esbuild": "0.28.2"
   },
   "type": "module"
 }

@@ -26,9 +26,14 @@ import {
 } from '@/lib/client/app';
 import {
   createCocoSsdAdapter,
+  captureSmolVlmFrame,
   LOCAL_INFERENCE_MIN_INTERVAL_MS,
   LocalInferenceScheduler,
+  SMOLVLM_MODEL,
+  SMOLVLM_REVISION,
+  SmolVlmController,
   type LocalInferenceState,
+  type SmolVlmState,
 } from '@/lib/client/inference';
 import {
   PudleButton,
@@ -95,6 +100,23 @@ function localInferenceLabel(inference: LocalInferenceState): string {
   }
 }
 
+function smolVlmLabel(state: SmolVlmState): string {
+  switch (state.status) {
+    case 'checking': return 'Checking WebGPU';
+    case 'unsupported': return 'Unsupported';
+    case 'idle': return 'Not loaded';
+    case 'loading': return `${Math.round(state.progress)}% downloaded`;
+    case 'ready': return state.result ? 'Description ready' : 'Ready locally';
+    case 'describing': return 'Describing frame';
+    case 'error': return 'Unavailable';
+  }
+}
+
+function formatBytes(value?: number): string | null {
+  if (value === undefined) return null;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
   function AppRecording(
     { account, activeSection, online, onSceneChange, onCloudAnalysisChange, onRecordingStateChange },
@@ -126,6 +148,12 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
           },
         }),
     );
+    const [smolVlm, setSmolVlm] = useState<SmolVlmState>({ status: 'checking' });
+    const [smolVlmConsent, setSmolVlmConsent] = useState(false);
+    const [smolVlmFrameError, setSmolVlmFrameError] = useState('');
+    const [smolVlmRunner] = useState(
+      () => new SmolVlmController({ onState: setSmolVlm }),
+    );
     const [cloud, setCloud] = useState<CloudAnalysisState>(
       cloudAnalysisClient.unconfigured,
     );
@@ -150,6 +178,10 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
         active = false;
       };
     }, []);
+
+    useEffect(() => {
+      return () => smolVlmRunner.dispose();
+    }, [smolVlmRunner]);
 
     useEffect(() => {
       let active = true;
@@ -324,13 +356,27 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
     useEffect(() => {
       const onVisibilityChange = () => {
         const visible = document.visibilityState !== 'hidden';
-        if (!visible) stopDetection();
+        if (!visible) {
+          stopDetection();
+          smolVlmRunner.unload('Model unloaded when Pudle was hidden.');
+          setSmolVlmConsent(false);
+          setSmolVlmFrameError('');
+        } else if (smolVlmRunner.state.status === 'checking') {
+          void smolVlmRunner.checkCapability();
+        }
         setPageVisible(visible);
       };
       queueMicrotask(onVisibilityChange);
       document.addEventListener('visibilitychange', onVisibilityChange);
       return () => document.removeEventListener('visibilitychange', onVisibilityChange);
-    }, [stopDetection]);
+    }, [smolVlmRunner, stopDetection]);
+
+    useEffect(() => {
+      if (activeSection === 'drive') return;
+      smolVlmRunner.unload('Model unloaded after leaving Drive.');
+      setSmolVlmConsent(false);
+      setSmolVlmFrameError('');
+    }, [activeSection, smolVlmRunner]);
 
     useEffect(() => {
       if (!controller.stream || !pageVisible || activeSection !== 'drive') {
@@ -383,6 +429,8 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
       () => ({
         stopMedia() {
           stopDetection();
+          smolVlmRunner.unload();
+          setSmolVlmConsent(false);
           controller.releaseCamera();
         },
         revokeUrls,
@@ -391,13 +439,42 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
           onCloudAnalysisChange([]);
           cloudRunner.disable();
           stopDetection();
+          smolVlmRunner.dispose();
+          setSmolVlmConsent(false);
           controller.dispose();
         },
         stopAndSave: controller.stop,
         isRecording: () => recordingActive,
       }),
-      [cloudRunner, controller, onCloudAnalysisChange, recordingActive, revokeUrls, stopDetection],
+      [
+        cloudRunner,
+        controller,
+        onCloudAnalysisChange,
+        recordingActive,
+        revokeUrls,
+        smolVlmRunner,
+        stopDetection,
+      ],
     );
+
+    const describeCurrentFrame = useCallback(() => {
+      setSmolVlmFrameError('');
+      const video = videoRef.current;
+      if (!video) {
+        setSmolVlmFrameError('Start the camera before describing a frame.');
+        return;
+      }
+      try {
+        const frame = captureSmolVlmFrame(video);
+        if (!smolVlmRunner.describe(frame)) {
+          setSmolVlmFrameError('Wait for the local model to become ready.');
+        }
+      } catch (error) {
+        setSmolVlmFrameError(
+          error instanceof Error ? error.message : 'The current frame could not be captured.',
+        );
+      }
+    }, [smolVlmRunner]);
 
     function selectReplay(file?: File) {
       replayRef.current?.revoke();
@@ -588,6 +665,120 @@ export const AppRecording = forwardRef<AppRecordingHandle, AppRecordingProps>(
                   : ' · waiting for a current frame'}
               </p>
             ) : null}
+          </section>
+
+          <section className="pudle-card" aria-labelledby="smolvlm-title">
+            <div className="pudle-panel-header">
+              <div>
+                <p className="pudle-eyebrow">Experimental · manual · on device</p>
+                <h2 id="smolvlm-title">Describe one frame</h2>
+              </div>
+              <PudleStatusBadge
+                tone={
+                  smolVlm.status === 'ready'
+                    ? 'positive'
+                    : smolVlm.status === 'describing' || smolVlm.status === 'loading'
+                      ? 'accent'
+                      : smolVlm.status === 'error'
+                        ? 'warning'
+                        : 'neutral'
+                }
+              >
+                {smolVlmLabel(smolVlm)}
+              </PudleStatusBadge>
+            </div>
+            <p className="pudle-muted">
+              SmolVLM can describe a single frame only when you tap Describe frame.
+              Pixels stay in this browser worker and are discarded after the request.
+              Descriptions may be wrong and never create reports or actions.
+            </p>
+            {smolVlm.status === 'loading' ? (
+              <div className="pudle-model-progress" role="status" aria-live="polite">
+                <progress max="100" value={smolVlm.progress}>
+                  {Math.round(smolVlm.progress)}%
+                </progress>
+                <small>
+                  {formatBytes(smolVlm.downloadedBytes)}
+                  {smolVlm.totalBytes
+                    ? ` of ${formatBytes(smolVlm.totalBytes)} discovered files`
+                    : 'Preparing model files'}
+                  {smolVlm.file ? ` · ${smolVlm.file}` : ''}
+                </small>
+              </div>
+            ) : null}
+            {smolVlm.status === 'unsupported'
+              || smolVlm.status === 'error'
+              || (smolVlm.status === 'idle' && smolVlm.message) ? (
+                <p className="pudle-inline-error" role="status">
+                  {smolVlm.status === 'idle' ? smolVlm.message : smolVlm.message}
+                </p>
+              ) : null}
+            {smolVlm.status === 'ready' && smolVlm.result ? (
+              <div className="pudle-analysis-result" aria-live="polite">
+                <strong>{smolVlm.result.description}</strong>
+                <span>
+                  {smolVlm.result.source} · {smolVlm.result.model} ·{' '}
+                  {Math.round(smolVlm.result.latencyMs)} ms
+                </span>
+                <time dateTime={new Date(smolVlm.result.capturedAt).toISOString()}>
+                  Frame captured {new Date(smolVlm.result.capturedAt).toLocaleTimeString()}
+                  {' · '}
+                  result {new Date(smolVlm.result.analyzedAt).toLocaleTimeString()}
+                </time>
+              </div>
+            ) : null}
+            {smolVlm.status === 'idle' || smolVlm.status === 'error' ? (
+              <label className="pudle-consent">
+                <input
+                  type="checkbox"
+                  checked={smolVlmConsent}
+                  onChange={(event) => setSmolVlmConsent(event.target.checked)}
+                />
+                <span>
+                  Download approximately 260 MB of pinned model weights plus runtime files
+                  from Hugging Face. The browser may cache model files. No camera frame is
+                  uploaded or persisted by Pudle.
+                </span>
+              </label>
+            ) : null}
+            <div className="pudle-drive-controls" aria-label="Local description controls">
+              {smolVlm.status === 'idle' || smolVlm.status === 'error' ? (
+                <PudleButton
+                  variant="secondary"
+                  disabled={!smolVlmConsent}
+                  onClick={() => void smolVlmRunner.load(smolVlmConsent)}
+                >
+                  Download local model
+                </PudleButton>
+              ) : null}
+              {smolVlm.status === 'ready' ? (
+                <PudleButton
+                  disabled={!controller.stream}
+                  onClick={describeCurrentFrame}
+                >
+                  Describe frame
+                </PudleButton>
+              ) : null}
+              {['loading', 'ready', 'describing'].includes(smolVlm.status) ? (
+                <PudleButton
+                  variant="danger"
+                  onClick={() => {
+                    smolVlmRunner.unload('Local model stopped and unloaded.');
+                    setSmolVlmConsent(false);
+                    setSmolVlmFrameError('');
+                  }}
+                >
+                  Stop &amp; unload
+                </PudleButton>
+              ) : null}
+            </div>
+            {smolVlmFrameError ? (
+              <p className="pudle-inline-error" role="alert">{smolVlmFrameError}</p>
+            ) : null}
+            <p className="pudle-disclosure">
+              {SMOLVLM_MODEL} · revision {SMOLVLM_REVISION.slice(0, 12)} · Apache-2.0 ·
+              WebGPU and shader-f16 required · maximum 512 px frame / 64 new tokens
+            </p>
           </section>
         </div>
 

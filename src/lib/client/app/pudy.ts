@@ -1,4 +1,6 @@
 export type PudyAction =
+  | 'remember-fuel-prices'
+  | 'remember-charging'
   | 'stop-recording'
   | 'save-current-clip'
   | 'prepare-hazard-report';
@@ -28,6 +30,18 @@ export function parsePudyRequest(
     return { kind: 'missing-wake-phrase' };
   }
   const command = normalized.replace(WAKE_PHRASE, '').trim();
+  // Do not turn a negated preference or action into its positive counterpart.
+  if (/\b(no|not|never|don't|dont|do not|stop watching|forget)\b/.test(command)) {
+    return { kind: 'unknown' };
+  }
+  if (/\b(important|remember|interested|watch)\b/.test(command)) {
+    if (/\b(gas|fuel|petrol)\b.*\bprices?\b/.test(command)) {
+      return { kind: 'action', action: 'remember-fuel-prices' };
+    }
+    if (/\b(charging|chargers?)\b/.test(command)) {
+      return { kind: 'action', action: 'remember-charging' };
+    }
+  }
   if (/\b(stop|end)\b.*\brecord(ing)?\b/.test(command)) {
     return { kind: 'action', action: 'stop-recording' };
   }
@@ -58,9 +72,10 @@ export function groundPudyAnswer(
     return 'Say “Hey Pudy” followed by your request.';
   }
   if (request.kind === 'unknown') {
-    return 'I can describe the displayed scene or nearby activity, stop or save a recording, or prepare a hazard report.';
+    return 'I can describe displayed observations, save a clip, prepare a report, or remember a fuel-price or charging interest. Manage or clear interests in Profile while parked.';
   }
   if (request.kind === 'action') {
+    if (request.action.startsWith('remember-')) return 'Preparing a private trip interest.';
     return request.action === 'prepare-hazard-report'
       ? 'Hazard report prepared. Review and confirm it on screen before anything is shared.'
       : request.action === 'save-current-clip'

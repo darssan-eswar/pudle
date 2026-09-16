@@ -1,0 +1,5 @@
+[
+  {"id":"toy-hazard","tripId":"synthetic-a","split":"test","expected":"hazard","predicted":"hazard","relevant":true,"expectedRelevant":true,"confidence":0.8,"ageMs":1000,"latencyMs":1200},
+  {"id":"toy-price","tripId":"synthetic-b","split":"test","expected":"fuel-price","predicted":"unknown","relevant":true,"expectedRelevant":true,"confidence":0.2,"ageMs":5000,"latencyMs":1600},
+  {"id":"toy-stale","tripId":"synthetic-c","split":"test","expected":"unknown","predicted":"charging","relevant":false,"expectedRelevant":false,"confidence":0.9,"ageMs":1800000,"latencyMs":1300}
+]
