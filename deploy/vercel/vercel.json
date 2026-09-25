@@ -1,39 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "buildCommand": "",
-  "installCommand": "",
-  "outputDirectory": "public",
-  "rewrites": [
-    {
-      "source": "/app/:path*",
-      "destination": "https://pulzar-road-intelligence.ledarssan919276.chatgpt.site/app/:path*"
-    },
-    {
-      "source": "/api/:path*",
-      "destination": "https://pulzar-road-intelligence.ledarssan919276.chatgpt.site/api/:path*"
-    },
-    {
-      "source": "/_next/:path*",
-      "destination": "https://pulzar-road-intelligence.ledarssan919276.chatgpt.site/_next/:path*"
-    }
-  ],
+  "framework": "nextjs",
   "headers": [
     {
-      "source": "/:path*",
+      "source": "/app",
       "headers": [
         { "key": "x-vercel-enable-rewrite-caching", "value": "0" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "camera=(self), microphone=(self), geolocation=(self)" }
-      ]
-    },
-    {
-      "source": "/api/:path*",
-      "headers": [
-        { "key": "Cache-Control", "value": "private, no-store" },
-        { "key": "CDN-Cache-Control", "value": "no-store" },
-        { "key": "Vercel-CDN-Cache-Control", "value": "no-store" }
       ]
     }
   ]

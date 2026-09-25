@@ -1,41 +1,49 @@
-# Vercel landing and app entry
+# Pudle convoy app on Vercel
 
-This directory serves the public landing page and forwards app/API requests to the existing Pudle Worker. It does not contain a database or private recordings.
+This is the focused, public-facing Next.js app for the road-obstacle demo.
+Vercel serves the landing page and app. Supabase provides email accounts,
+convoy membership, short-lived reports, and Realtime delivery. The app uses a
+publishable key and Row Level Security; it does not use a service-role key in
+the browser.
 
-[Current deployment and access status](../../docs/DEPLOYMENT.md)
+The older Vinext/Cloudflare prototype remains in `../../src/`. It is a separate,
+owner-private deployment and is not the backend for this app.
 
-## Build from the repository root
+## Local checks
+
+From this directory:
 
 ```bash
 npm ci
+npm test
+npm run typecheck
 npm run build
-npm run build:landing
 ```
 
-The export reuses `src/app/page.tsx` and the production stylesheet. It writes static HTML, CSS, and icons under `public/`. Those generated files are ignored by Git and included in the Vercel upload through `.vercelignore`.
+Set the two keys in `.env.local` using `.env.example`. The project URL and
+publishable key are public configuration; do not add a Supabase secret key or
+database password to a `NEXT_PUBLIC_` variable. Until these keys are set, `/app`
+shows a setup message.
 
-## Publish
+## Database
 
-After verifying the source revision and build:
+Apply `../../supabase/migrations/202609250001_convoy_obstacles.sql` to a dedicated
+Supabase project. It creates the tables, membership functions, policies, and
+Realtime publication. Do not use an existing production project until its schema
+and policies have been reviewed. See [soft-launch guide](../../docs/OBSTACLE_SOFT_LAUNCH.md).
+
+## Vercel
+
+Link this directory to the existing `pudle` project under
+`darssan-eswars-projects`. Connect the free Supabase integration or enter the
+project URL and publishable key as production and preview environment variables.
+Then build and deploy from this directory:
 
 ```bash
-cd deploy/vercel
-vercel link --project pudle --scope darssan-eswars-projects
-vercel deploy --prod --scope darssan-eswars-projects
+vercel link --yes --scope darssan-eswars-projects --project pudle
+vercel --prod --scope darssan-eswars-projects
 ```
 
-Run the CLI from this directory, not the repository root. The root build targets a Cloudflare Worker; it is not a standard Next.js Vercel deployment.
-
-The current public address is [pudle-demo.vercel.app](https://pudle-demo.vercel.app). If it changes, update the canonical URL in `scripts/build-landing.ts` and the backend's trusted origin.
-
-## Routing and secrets
-
-- `/` and the landing assets are static.
-- `/app`, `/api`, and `/_next` forward to the existing Worker.
-- API responses and external rewrites are not cached.
-- The backend audience is managed in Sites. Publishing this directory does not make the private app public.
-- Keep provider credentials in the Worker runtime. Never put them in this directory or in client-prefixed environment variables.
-
-Deploy a matching Worker revision before an application release. Follow the [deployment checklist](../../docs/DEPLOYMENT.md) for access, origin, database, and two-user checks.
-
-Reference: [Vercel rewrites](https://vercel.com/docs/routing/rewrites).
+`vercel.json` selects the Next.js framework. It no longer forwards `/app` to
+the owner-private Cloudflare worker. If you use Git integration later, set the
+Vercel root directory to `deploy/vercel`.
