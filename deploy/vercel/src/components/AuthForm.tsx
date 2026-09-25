@@ -17,7 +17,11 @@ export function AuthForm({ client }: { client: SupabaseClient }) {
     setMessage('');
     try {
       const result = mode === 'signup'
-        ? await client.auth.signUp({ email: email.trim(), password })
+        ? await client.auth.signUp({
+            email: email.trim(),
+            password,
+            options: { emailRedirectTo: `${window.location.origin}/app` },
+          })
         : await client.auth.signInWithPassword({ email: email.trim(), password });
       if (result.error) throw result.error;
       if (mode === 'signup' && !result.data.session) {

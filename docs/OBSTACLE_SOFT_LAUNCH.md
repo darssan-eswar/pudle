@@ -41,9 +41,12 @@ the browser or repository.
    `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for the Vercel deployment.
 2. Apply [the migration](../supabase/migrations/202609250001_convoy_obstacles.sql).
    Check that the `obstacle_reports` table is in `supabase_realtime`.
-3. Keep email confirmation enabled and confirm both test accounts. If your
-   project's email provider cannot deliver the messages, configure it before
-   inviting outside testers.
+3. In Supabase Auth → URL Configuration, set the Site URL to the production
+   Vercel origin and allow `https://pudle-demo.vercel.app/app` as a redirect
+   URL (plus the exact preview URL when testing a preview). Sign-up requests
+   that app redirect for confirmation emails. Keep email confirmation enabled
+   and confirm both test accounts. If your project's email provider cannot
+   deliver the messages, configure it before inviting outside testers.
 4. Deploy from `deploy/vercel`, then run the two-account check below on the
    deployed URL. The owner-private legacy Sites app is independent.
 
