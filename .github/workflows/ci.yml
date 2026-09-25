@@ -59,10 +59,10 @@ jobs:
           docker run --rm -d --name pudle-ci-postgres -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17-alpine
           trap 'docker stop pudle-ci-postgres >/dev/null' EXIT
           for attempt in {1..30}; do
-            if docker exec pudle-ci-postgres pg_isready -U postgres >/dev/null 2>&1; then break; fi
+            if docker exec pudle-ci-postgres pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then break; fi
             sleep 1
           done
           docker exec pudle-ci-postgres mkdir -p /tmp/pudle/migrations /tmp/pudle/tests
           docker cp supabase/migrations/202609250001_convoy_obstacles.sql pudle-ci-postgres:/tmp/pudle/migrations/202609250001_convoy_obstacles.sql
           docker cp supabase/tests/convoy_rls.psql pudle-ci-postgres:/tmp/pudle/tests/convoy_rls.psql
-          docker exec pudle-ci-postgres psql -U postgres -d postgres -f /tmp/pudle/tests/convoy_rls.psql
+          docker exec pudle-ci-postgres psql -h 127.0.0.1 -U postgres -d postgres -f /tmp/pudle/tests/convoy_rls.psql
