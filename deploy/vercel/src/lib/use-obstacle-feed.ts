@@ -12,7 +12,7 @@ export function useObstacleFeed(client: SupabaseClient | null, convoyId: string 
   const [latestAlert, setLatestAlert] = useState<ObstacleReport | null>(null);
   const [status, setStatus] = useState<FeedStatus>('connecting');
   const [error, setError] = useState('');
-  const seen = useRef(new Set<string>());
+  const seen = useRef(new Map<string, number>());
   const audioRef = useRef(audioEnabled);
 
   useEffect(() => { audioRef.current = audioEnabled; }, [audioEnabled]);
@@ -34,7 +34,7 @@ export function useObstacleFeed(client: SupabaseClient | null, convoyId: string 
       const report = parseReport(raw);
       if (!report || report.convoy_id !== convoyId || !isFreshReport(report)) return;
       if (seen.current.has(report.id)) return;
-      seen.current.add(report.id);
+      seen.current.set(report.id, Date.parse(report.expires_at));
       setReports((current) => [report, ...current.filter((item) => item.id !== report.id && isFreshReport(item))]
         .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
         .slice(0, 25));
@@ -50,12 +50,16 @@ export function useObstacleFeed(client: SupabaseClient | null, convoyId: string 
     }
 
     async function refresh() {
+      const now = Date.now();
+      for (const [id, expiresAt] of seen.current) {
+        if (expiresAt <= now) seen.current.delete(id);
+      }
+      setReports((current) => current.filter((item) => isFreshReport(item, now)));
+      setLatestAlert((current) => current && isFreshReport(current, now) ? current : null);
       try {
         const recent = await listReports(client!, convoyId!);
         if (disposed) return;
         recent.slice().reverse().forEach(receive);
-        setReports((current) => current.filter((item) => isFreshReport(item)));
-        setLatestAlert((current) => current && isFreshReport(current) ? current : null);
         setError('');
       } catch {
         if (!disposed) setError('Could not refresh reports. Check the connection.');
