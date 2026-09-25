@@ -1,100 +1,69 @@
 # Pudle
 
-Pudle turns a phone into a private dashcam. Save clips on the device, share a confirmed road report, and message the people in your ride. Pudy is the voice companion: enable voice, then say “Hey Pudy.”
+Pudle helps people traveling together share a road observation. The current
+soft-launch target is deliberately narrow: a passenger in the lead car confirms
+an obstacle, and the following phone displays and speaks the report.
 
-[Landing page](https://pudle-demo.vercel.app) · [App](https://pudle-demo.vercel.app/app) · [Setup](docs/SETUP.md) · [Demo guide](docs/SUBMISSION.md)
+[Landing page](https://pudle-demo.vercel.app) · [App](https://pudle-demo.vercel.app/app) · [Two-phone demo guide](docs/OBSTACLE_SOFT_LAUNCH.md) · [Research](research/README.md)
 
-## Release status
+## Current architecture
 
-The landing page is public. The app and backend are deployed, but the existing owner-only ChatGPT access gate remains in place before Pudle's own account sign-in. The repository is private.
+| Part | Where | Job |
+|---|---|---|
+| `deploy/vercel/` | Vercel | Next.js landing, signup, convoy and report interface |
+| `supabase/` | Supabase | Auth, Postgres tables, Row Level Security, Realtime |
+| `src/` | Owner-private Sites/Cloudflare prototype | Earlier dashcam, rides, Pudy, D1, and model experiments |
 
-Cloud analysis has no provider credential configured. “Hey Pudy” works through supported browser speech APIs while the page is visible; it is not a background or locked-phone wake-word service. Camera and microphone behavior still need a check on the presentation phone.
+The Vercel app is replacing the old landing gateway, which forwarded `/app` to
+the owner-private prototype. These are separate applications and databases.
+The older prototype is still useful for dashcam and model research, but its
+private access gate prevents a second person from signing up through the public
+URL. The Supabase app is the two-person demo path after database provisioning,
+migration, deployment, and phone verification are complete.
 
-See [deployment status and release gates](docs/DEPLOYMENT.md) for the current URLs and configuration.
+## What the obstacle demo implements
 
-## What the MVP does
+- Two independent email accounts and a private convoy joined by a short code.
+- A confirmed report for a tree or branch, debris, stopped vehicle, or other obstruction.
+- Supabase Realtime delivery with a three-second refresh path when Realtime misses a message.
+- A visual alert and optional spoken report on the following phone after the listener enables audio.
+- Short report visibility: two minutes. The convoy expires after 24 hours.
 
-- Records the camera locally, with playback, export, and deletion. Only recording metadata syncs to the backend.
-- Keeps accounts, sessions, and recording metadata separate for each user.
-- Shares confirmed road reports within two miles for up to 30 minutes. Responses omit reporter identity and coordinates.
-- Supports invite-only rides with email-bound invitations and persisted text messages.
-- Lets Pudy answer from displayed observations, save a clip, stop recording, or prepare a report. Sharing still requires confirmation.
-- Offers optional on-device object detection and a separately consented cloud-analysis path for compressed still frames.
-- Runs COCO-SSD through a single-flight scheduler and offers a separately consented,
-  manual SmolVLM frame description prototype on supported WebGPU devices.
-- Remembers explicit fuel-price/charging interests and confirmed notes temporarily
-  in the current tab. Profile includes expiry details and a clear-memory control.
+The report carries no image, coordinates, lane, or distance. Automatic camera
+detection and background voice are not part of this release. [Read the demo and
+device checklist](docs/OBSTACLE_SOFT_LAUNCH.md) before recording a driving
+demonstration.
 
-Reports and model output can be wrong. Pudle is not a navigation system or a safety guarantee. Use the demo while parked or as a passenger.
+## Run the Vercel app locally
 
-## Run locally
-
-Use Node.js 22.13 or newer, then install the locked dependencies:
+Use Node.js 22.13 or newer. Configure a Supabase project with
+[the migration](supabase/migrations/202609250001_convoy_obstacles.sql), and set
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in
+`deploy/vercel/.env.local`.
 
 ```bash
+cd deploy/vercel
 npm ci
-```
-
-Follow [local setup](docs/SETUP.md) to create an isolated database, start the app, and optionally seed two demo accounts. No provider key is needed for recording, reports, ride messages, or text controls.
-
-## Architecture
-
-| Component | Responsibility |
-|---|---|
-| `src/` | Vinext routes, React components, browser libraries, server services, D1 schema, and application styles |
-| Browser | Camera, local clips, optional on-device detection, Pudy voice/text controls |
-| Vercel | Static landing page; forwards app and API requests to the Worker |
-| Cloudflare Worker and D1, hosted through Sites | Authentication, per-user metadata, reports, rides, messages, and optional analysis requests |
-| Google Gemini, when configured | Processes separately consented compressed still frames |
-
-There is one backend database. Vercel does not hold a second copy of it, and the server does not store recording files. [Data handling and retention](docs/PRIVACY.md)
-
-The app uses Vinext, React, TypeScript, Drizzle, Web Crypto, TensorFlow.js,
-COCO-SSD, and a pinned Transformers.js runtime for the optional local SmolVLM
-prototype. Pudy's current commands do not require a language-model API.
-
-## Documentation
-
-| Guide | Contents |
-|---|---|
-| [Setup](docs/SETUP.md) | Local database, environment variables, demo accounts, validation |
-| [API](docs/API.md) | Routes, request headers, authentication, limits, and response behavior |
-| [Deployment](docs/DEPLOYMENT.md) | Live addresses, hosting split, release process, remaining gates |
-| [Privacy](docs/PRIVACY.md) | Recordings, location, microphone processing, cloud frames, retention |
-| [Verification](docs/VERIFIED.md) | Test results, browser checks, and what has not been verified |
-| [Local models](docs/LOCAL_MODELS.md) | Portable inference contract, COCO-SSD integration, evaluation limits |
-| [Demo guide](docs/SUBMISSION.md) | Problem, solution, recording sequence, submission checklist |
-| [Implementation status](docs/IMPLEMENTATION_PLAN.md) | Delivered work and unfinished release checks |
-| [Roadmap](docs/ROADMAP.md) | Later ideas, clearly separate from the MVP |
-| [Edge research](research/README.md) | Abstract, model shortlist, benchmark proposal, and staged convoy trial |
-
-## Checks
-
-```bash
-npm run lint
-npm run typecheck
 npm test
+npm run typecheck
 npm run build
-npm run build:landing
-npm run evaluate:local-model
-npm run smoke:smolvlm
-npm run smoke:smolvlm -- --offline
-npm run benchmark:metadata -- research/fixtures/synthetic-predictions.json
+npm run dev
 ```
 
-`smoke:smolvlm` downloads the real pinned model into the ignored
-`.cache/pudle-models/` directory and runs generated, nonprivate pixels on CPU.
-It can take several minutes and verifies execution, not road accuracy. GitHub
-Actions runs the standard checks for pull requests and pushes to `main`. See
-[verification evidence](docs/VERIFIED.md).
+The previous prototype is built separately from the repository root. Its
+[local setup](docs/SETUP.md), [API](docs/API.md), [privacy notes](docs/PRIVACY.md),
+and [model verification](docs/VERIFIED.md) describe that application. It uses
+Vinext, Cloudflare D1, COCO-SSD, and a pinned local SmolVLM prototype; the
+focused Vercel app does not claim those functions.
 
-The metadata fixture contains fabricated predictions and latencies. It checks
-the scorer, not a model's accuracy. Native background “Hey Pudy,” Bluetooth
-peer networking, LoRa/Sidewalk hardware, live Gemini, and the 50–80-driver trial
-remain release dependencies; see the [staged roadmap](research/ROADMAP.md).
+## Research and next stages
 
-## Contributing and submission
+[Pudle-Edge research](research/README.md) contains the abstract,
+[candidate models](research/MODELS.md), [benchmark proposal](research/BENCHMARK.md),
+and [roadmap](research/ROADMAP.md). The benchmark fixture is synthetic and does
+not establish accuracy on road footage or a phone. Native “Hey Pudy,” automatic
+tree detection, Bluetooth relay, vehicle integration, and a larger convoy trial
+remain research and engineering work.
 
-Keep changes focused, add tests for changed behavior, and use a pull request with passing CI. Never commit credentials, local database state, or private media.
-
-The exact GitHub challenge and its rules have not been confirmed. No contest deadline, public-repository requirement, or submission format is assumed. A license must be chosen by the owner before presenting this as an open-source release.
+The repository is private. No open-source license or challenge deadline is
+assumed. Do not commit credentials or private driving media.

@@ -1,0 +1,68 @@
+-- Run against a disposable PostgreSQL database, never a populated Supabase project.
+\set ON_ERROR_STOP on
+
+create role anon nologin;
+create role authenticated nologin;
+create schema auth;
+create table auth.users (id uuid primary key);
+create function auth.uid() returns uuid language sql stable as $$
+  select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+$$;
+grant usage on schema auth, public to authenticated;
+grant execute on function auth.uid() to authenticated;
+create publication supabase_realtime;
+
+insert into auth.users(id) values
+  ('11111111-1111-4111-8111-111111111111'),
+  ('22222222-2222-4222-8222-222222222222'),
+  ('33333333-3333-4333-8333-333333333333');
+
+\ir ../migrations/202609250001_convoy_obstacles.sql
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', false);
+select convoy_id, code from public.create_convoy('Two car test') \gset
+select set_config('test.convoy_id', :'convoy_id', false);
+select public.join_convoy(:'code') = :'convoy_id'::uuid as owner_can_rejoin;
+insert into public.obstacle_reports(convoy_id, reporter_id, kind)
+  values (:'convoy_id', '11111111-1111-4111-8111-111111111111', 'tree');
+
+select set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', false);
+do $$
+begin
+  if exists (select 1 from public.convoys) then
+    raise exception 'A non-member could read a convoy';
+  end if;
+  if exists (select 1 from public.obstacle_reports) then
+    raise exception 'A non-member could read reports';
+  end if;
+  begin
+    insert into public.obstacle_reports(convoy_id, reporter_id, kind)
+      values (current_setting('test.convoy_id')::uuid, '33333333-3333-4333-8333-333333333333', 'tree');
+    raise exception 'A non-member could insert a report';
+  exception when insufficient_privilege then null;
+  end;
+end;
+$$;
+
+select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', false);
+select public.join_convoy(:'code') = :'convoy_id'::uuid as second_member_joined;
+do $$
+begin
+  if (select count(*) from public.convoys) != 1 then
+    raise exception 'Member could not read the convoy';
+  end if;
+  if (select count(*) from public.obstacle_reports) != 1 then
+    raise exception 'Member could not read the report';
+  end if;
+  begin
+    insert into public.obstacle_reports(convoy_id, reporter_id, kind)
+      values (current_setting('test.convoy_id')::uuid, '11111111-1111-4111-8111-111111111111', 'debris');
+    raise exception 'Member could impersonate another reporter';
+  exception when raise_exception then
+    if sqlerrm != 'Reporter must be the signed-in user' then raise; end if;
+  end;
+end;
+$$;
+
+select 'RLS checks passed' as result;

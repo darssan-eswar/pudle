@@ -1,6 +1,13 @@
 # Deployment
 
-Status checked September 14, 2026.
+The sections below record the September 14 gateway release. On September 25,
+the repository gained a separate Next.js obstacle demo under `deploy/vercel` and
+a Supabase migration. That code replaces the gateway only after the database is
+provisioned and a production Vercel deployment succeeds. See the
+[two-phone soft-launch guide](OBSTACLE_SOFT_LAUNCH.md) for the new flow and its
+verification gates.
+
+Status of the earlier gateway checked September 14, 2026.
 
 ## Addresses and access
 
