@@ -48,10 +48,11 @@ shows a setup message. A dedicated Supabase project still needs the migration,
 Auth redirect URLs, and a tested email provider. Do not place a service-role
 key or database password in a `NEXT_PUBLIC_` variable.
 
-The September 14 production deployment was the older landing/gateway. A new
-Git-connected build and a two-device end-to-end test must be checked before
-calling the Supabase app live. The Git connection may initiate a build before
-the Supabase setup is complete; build success alone is not demo readiness.
+The September 14 production deployment was the older landing/gateway. The
+October 1 Git-connected production build reported Ready, and the public
+`/app` route displayed **Waiting for Supabase**. A two-device end-to-end test
+must pass before calling the Supabase app live. Build success alone is not
+demo readiness.
 
 ## Evidence and limits
 
@@ -68,9 +69,9 @@ the Supabase setup is complete; build success alone is not demo readiness.
 - Older prototype test results in [`VERIFIED.md`](VERIFIED.md) apply to `src/`,
   not to the new Supabase two-phone path.
 - Two older Copilot branches, `darssan-eswar-events-rides-api` and
-  `darssan-eswar-pudle-app-integration`, remain outside `main`. They modify
-  the prototype and should be reviewed and tested before any merge; they are
-  not required for the obstacle-only release.
+  `darssan-eswar-pudle-app-integration`, are preserved on GitHub but remain
+  outside `main`. They modify the prototype and should be reviewed and tested
+  before any merge; they are not required for the obstacle-only release.
 
 ## Requested review output
 
