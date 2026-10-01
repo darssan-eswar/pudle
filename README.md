@@ -6,6 +6,8 @@ an obstacle, and the following phone displays and speaks the report.
 
 [Landing page](https://pudle-demo.vercel.app) · [App](https://pudle-demo.vercel.app/app) · [Two-phone demo guide](docs/OBSTACLE_SOFT_LAUNCH.md) · [Research](research/README.md)
 
+For an independent assessment, start with the [review brief](docs/EXTERNAL_REVIEW_BRIEF.md).
+
 ## Current architecture
 
 | Part | Where | Job |
