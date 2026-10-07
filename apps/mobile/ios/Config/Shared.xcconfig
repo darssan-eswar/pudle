@@ -1,0 +1,12 @@
+// Shared build settings. Never put secrets here; this file is committed.
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+PRODUCT_BUNDLE_IDENTIFIER = app.pudle.driver.dev
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM =
+PUDLE_SUPABASE_URL =
+PUDLE_SUPABASE_PUBLISHABLE_KEY =
+PUDLE_BUILD_COMMIT = local
+
+// Per-developer values (team, bundle ID, dev backend). Ignored by git.
+#include? "Local.xcconfig"

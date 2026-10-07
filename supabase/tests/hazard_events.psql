@@ -1,0 +1,222 @@
+-- Policy and retention tests for 202610070001_hazard_events_v1.sql.
+-- Run with supabase/tests/run_local.sh against a disposable PostgreSQL database only.
+\set ON_ERROR_STOP on
+
+create role anon nologin;
+create role authenticated nologin;
+create schema auth;
+create table auth.users (id uuid primary key);
+create function auth.uid() returns uuid language sql stable as $$
+  select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+$$;
+grant usage on schema auth, public to authenticated, anon;
+grant execute on function auth.uid() to authenticated, anon;
+create publication supabase_realtime;
+
+insert into auth.users(id) values
+  ('11111111-1111-4111-8111-111111111111'),  -- alice: convoy owner
+  ('22222222-2222-4222-8222-222222222222'),  -- bob: member
+  ('33333333-3333-4333-8333-333333333333');  -- mallory: outsider
+
+\ir ../migrations/202609250001_convoy_obstacles.sql
+\ir ../migrations/202610070001_hazard_events_v1.sql
+
+create function pg_temp.as_user(p uuid) returns void language sql as $$
+  select set_config('request.jwt.claim.sub', coalesce(p::text, ''), false)
+$$;
+create function pg_temp.expect_error(p_sql text, p_message text) returns void language plpgsql as $$
+begin
+  begin
+    execute p_sql;
+  exception when others then
+    if position(p_message in sqlerrm) = 0 then
+      raise exception 'Expected error containing "%", got "%"', p_message, sqlerrm;
+    end if;
+    return;
+  end;
+  raise exception 'Expected error "%" but statement succeeded: %', p_message, p_sql;
+end;
+$$;
+
+-- Setup: alice creates a convoy, bob joins.
+set role authenticated;
+select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
+select convoy_id, code from public.create_convoy('Hazard test') \gset
+select pg_temp.as_user('22222222-2222-4222-8222-222222222222');
+select public.join_convoy(:'code') is not null as bob_joined;
+select set_config('test.convoy', :'convoy_id', false);
+
+-- 1. Unlocated report by alice; idempotent retry returns the same row.
+select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
+select (public.report_hazard(:'convoy_id', 'debris', 'aaaaaaaa-0000-4000-8000-000000000001')).id as first_id \gset
+select (public.report_hazard(:'convoy_id', 'debris', 'aaaaaaaa-0000-4000-8000-000000000001')).id = :'first_id'::uuid as idempotent_retry;
+do $$ begin
+  if (select count(*) from public.hazard_events) != 1 then raise exception 'Retry created a duplicate row'; end if;
+end $$;
+
+-- 2. Rate limit applies to new client IDs.
+select pg_temp.expect_error(
+  format('select public.report_hazard(%L, %L, %L)', current_setting('test.convoy'), 'tree', 'aaaaaaaa-0000-4000-8000-000000000002'),
+  'Wait a moment');
+
+-- Shift alice's last report back past the rate-limit window (superuser test helper).
+reset role;
+update public.hazard_events set created_at = created_at - interval '10 seconds',
+  observed_at = observed_at - interval '10 seconds';
+set role authenticated;
+select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
+
+-- 3. Location without consent is refused; with consent it is stored.
+select pg_temp.expect_error(
+  format('select public.report_hazard(%L, %L, %L, now(), 35.2271, -80.8431, 8, 10)',
+         current_setting('test.convoy'), 'tree', 'aaaaaaaa-0000-4000-8000-000000000003'),
+  'Location sharing consent required');
+select public.set_location_consent(true, '2026-10-07');
+select (public.report_hazard(:'convoy_id', 'tree', 'aaaaaaaa-0000-4000-8000-000000000003',
+        now(), 35.2271, -80.8431, 8, 10)).latitude = 35.2271 as located_report_stored;
+
+reset role;
+update public.hazard_events set created_at = created_at - interval '10 seconds',
+  observed_at = observed_at - interval '10 seconds';
+set role authenticated;
+select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
+
+-- 4. Malformed input is refused by constraints / validation.
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L)', current_setting('test.convoy'),
+  'say turn left now', 'aaaaaaaa-0000-4000-8000-000000000004'), 'violates check constraint');
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L, now(), 95, -80, 8)', current_setting('test.convoy'),
+  'tree', 'aaaaaaaa-0000-4000-8000-000000000005'), 'violates check constraint');
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L, now(), 35, -80, 500)', current_setting('test.convoy'),
+  'tree', 'aaaaaaaa-0000-4000-8000-000000000006'), 'violates check constraint');
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L, now(), 35, null, 8)', current_setting('test.convoy'),
+  'tree', 'aaaaaaaa-0000-4000-8000-000000000007'), 'hazard_location_complete');
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L, now() - interval %L)', current_setting('test.convoy'),
+  'tree', 'aaaaaaaa-0000-4000-8000-000000000008', '10 minutes'), 'stale or in the future');
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L, now() + interval %L)', current_setting('test.convoy'),
+  'tree', 'aaaaaaaa-0000-4000-8000-000000000009', '1 hour'), 'stale or in the future');
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, null)', current_setting('test.convoy'), 'tree'),
+  'client_event_id is required');
+
+-- 5. Direct writes are impossible; only the function writes.
+select pg_temp.expect_error($$insert into public.hazard_events(convoy_id, reporter_id, client_event_id, kind, observed_at, expires_at)
+  values (current_setting('test.convoy')::uuid, '22222222-2222-4222-8222-222222222222', gen_random_uuid(), 'tree', now(), now() + interval '1 minute')$$,
+  'permission denied');
+select pg_temp.expect_error($$update public.hazard_events set kind = 'other'$$, 'permission denied');
+select pg_temp.expect_error($$delete from public.hazard_events$$, 'permission denied');
+
+-- 6. Member bob reads both events; outsider mallory reads nothing and cannot report.
+select pg_temp.as_user('22222222-2222-4222-8222-222222222222');
+do $$ begin
+  if (select count(*) from public.hazard_events) != 2 then raise exception 'Member could not read convoy events'; end if;
+end $$;
+select pg_temp.as_user('33333333-3333-4333-8333-333333333333');
+do $$ begin
+  if exists (select 1 from public.hazard_events) then raise exception 'Outsider read hazard events'; end if;
+  if exists (select 1 from public.location_consents) then raise exception 'Outsider read consents'; end if;
+end $$;
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L)', current_setting('test.convoy'),
+  'tree', 'cccccccc-0000-4000-8000-000000000001'), 'Not a member');
+
+-- 7. Unauthenticated callers are refused.
+select pg_temp.as_user(null);
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L)', current_setting('test.convoy'),
+  'tree', 'dddddddd-0000-4000-8000-000000000001'), 'Authentication required');
+set role anon;
+select pg_temp.expect_error('select count(*) from public.hazard_events', 'permission denied');
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L)', current_setting('test.convoy'),
+  'tree', 'dddddddd-0000-4000-8000-000000000002'), 'permission denied');
+set role authenticated;
+
+-- 8. Users cannot run retention cleanup.
+select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
+select pg_temp.expect_error('select public.purge_expired_hazard_data()', 'permission denied');
+
+-- 9. Withdrawing consent strips stored positions.
+select public.set_location_consent(false, '2026-10-07');
+reset role;
+do $$ begin
+  if exists (select 1 from public.hazard_events where latitude is not null) then
+    raise exception 'Revoking consent left positions stored';
+  end if;
+end $$;
+set role authenticated;
+
+-- 10. Revoked membership loses access immediately.
+select pg_temp.as_user('22222222-2222-4222-8222-222222222222');
+select public.leave_convoy(:'convoy_id');
+do $$ begin
+  if exists (select 1 from public.hazard_events) then raise exception 'Former member still reads events'; end if;
+end $$;
+
+-- 11. Expired events are invisible, then physically deleted by retention cleanup.
+select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
+reset role;
+update public.hazard_events set created_at = now() - interval '3 hours', observed_at = now() - interval '3 hours',
+  expires_at = now() - interval '3 hours' + interval '5 minutes'
+  where client_event_id = 'aaaaaaaa-0000-4000-8000-000000000001';
+set role authenticated;
+select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
+do $$ begin
+  if (select count(*) from public.hazard_events) != 1 then raise exception 'Expired event still visible'; end if;
+end $$;
+reset role;
+select hazard_events_deleted = 1 as purge_deleted_expired from public.purge_expired_hazard_data();
+do $$ begin
+  if (select count(*) from public.hazard_events) != 1 then raise exception 'Purge removed a live event or missed an expired one'; end if;
+end $$;
+select pg_temp.expect_error($$select public.purge_expired_hazard_data(interval '2 days')$$, 'Grace period');
+
+-- 12. Camera reports: need location; side/blockage stored; blockage lives longer.
+reset role;
+delete from public.hazard_events;
+set role authenticated;
+select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
+select public.set_location_consent(true, '2026-10-07');
+select pg_temp.as_user('22222222-2222-4222-8222-222222222222');
+select public.join_convoy(:'code') is not null as bob_rejoined;
+select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L, now(), null, null, null, null, %L, %L, true)',
+  current_setting('test.convoy'), 'tree', 'eeeeeeee-0000-4000-8000-000000000001', 'driver_confirmed_camera', 'right'),
+  'Camera reports need a location');
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L, now(), 35, -80, 8, 10, %L, %L, false)',
+  current_setting('test.convoy'), 'tree', 'eeeeeeee-0000-4000-8000-000000000002', 'gemini_says_so', 'right'),
+  'violates check constraint');
+select pg_temp.expect_error(format('select public.report_hazard(%L, %L, %L, now(), 35, -80, 8, 10, %L, %L, false)',
+  current_setting('test.convoy'), 'tree', 'eeeeeeee-0000-4000-8000-000000000003', 'driver_confirmed_camera', 'upward'),
+  'violates check constraint');
+select (r).side = 'right' and (r).blocks_road and (r).source = 'driver_confirmed_camera'
+  and (r).expires_at - (r).created_at = interval '30 minutes' as camera_blockage_stored
+  from (select public.report_hazard(:'convoy_id', 'tree', 'eeeeeeee-0000-4000-8000-000000000004',
+        now(), 35.2271, -80.8431, 8, 10, 'driver_confirmed_camera', 'right', true) as r) x;
+
+-- 13. Corridors: members read, outsiders don't, consent required, bad polylines refused.
+select public.save_corridor(:'convoy_id', 'Demo road', '[[35.0,-80.0],[35.001,-80.0],[35.002,-80.0]]'::jsonb) is not null as corridor_saved;
+select pg_temp.expect_error(format('select public.save_corridor(%L, %L, %L::jsonb)', current_setting('test.convoy'), 'bad',
+  '[[35.0,-80.0]]'), 'violates check constraint');
+select pg_temp.expect_error(format('select public.save_corridor(%L, %L, %L::jsonb)', current_setting('test.convoy'), 'bad',
+  '[[95.0,-80.0],[35,-80]]'), 'violates check constraint');
+select pg_temp.expect_error(format('select public.save_corridor(%L, %L, %L::jsonb)', current_setting('test.convoy'), 'bad',
+  '[["a","b"],[35,-80]]'), 'violates check constraint');
+select pg_temp.expect_error($$insert into public.road_corridors(convoy_id, created_by, name, points)
+  values (current_setting('test.convoy')::uuid, '11111111-1111-4111-8111-111111111111', 'x', '[[1,1],[2,2]]')$$, 'permission denied');
+select pg_temp.as_user('22222222-2222-4222-8222-222222222222');
+do $$ begin
+  if (select count(*) from public.road_corridors) != 1 then raise exception 'Member cannot read corridor'; end if;
+end $$;
+select pg_temp.expect_error(format('select public.save_corridor(%L, %L, %L::jsonb)', current_setting('test.convoy'), 'x',
+  '[[35.0,-80.0],[35.001,-80.0]]'), 'Location sharing consent required');
+select pg_temp.as_user('33333333-3333-4333-8333-333333333333');
+do $$ begin
+  if exists (select 1 from public.road_corridors) then raise exception 'Outsider read corridor'; end if;
+end $$;
+select pg_temp.expect_error(format('select public.save_corridor(%L, %L, %L::jsonb)', current_setting('test.convoy'), 'x',
+  '[[35.0,-80.0],[35.001,-80.0]]'), 'Not a member');
+-- Revoking consent removes the creator's corridors.
+select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
+select public.set_location_consent(false, '2026-10-07');
+reset role;
+do $$ begin
+  if exists (select 1 from public.road_corridors) then raise exception 'Revoking consent left corridors'; end if;
+end $$;
+
+select 'hazard_events checks passed' as result;

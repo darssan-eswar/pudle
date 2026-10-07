@@ -1,0 +1,13 @@
+// Copy to Config/Local.xcconfig (ignored by git) and fill in.
+// Team ID: developer.apple.com -> Account -> Membership. Not a password.
+DEVELOPMENT_TEAM = ABCDE12345
+// Must be unique to your team, e.g. com.yourname.pudle
+PRODUCT_BUNDLE_IDENTIFIER = com.example.pudle
+// Bump for every TestFlight upload.
+CURRENT_PROJECT_VERSION = 1
+
+// Optional: a DEDICATED development Supabase project (not the public one).
+// xcconfig treats // as a comment, so write the URL with $() between the slashes.
+PUDLE_SUPABASE_URL = https:/$()/your-dev-project.supabase.co
+// Publishable (anon) key only. Never a service-role key.
+PUDLE_SUPABASE_PUBLISHABLE_KEY = sb_publishable_xxx

@@ -40,3 +40,9 @@ next-env.d.ts
 *.tsbuildinfo
 /.pudle-local/
 /.cache/pudle-models/
+
+# iOS app: per-developer signing/backend config and generated project
+apps/mobile/ios/Config/Local.xcconfig
+apps/mobile/ios/Pudle.xcodeproj/
+apps/mobile/ios/PudleCore/.build/
+apps/mobile/ios/PudleCore/.swiftpm/
