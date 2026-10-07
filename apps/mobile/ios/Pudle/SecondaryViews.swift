@@ -8,6 +8,8 @@ struct ReportView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var confirmedNotDriving = false
     @State private var sending = false
+    @State private var side: HazardSide = .unknown
+    @State private var blocksRoad = false
 
     var body: some View {
         NavigationStack {
@@ -19,20 +21,29 @@ struct ReportView: View {
                         Text("This phone is moving. Drivers should not send reports while driving.")
                     }
                 }
+                Section("Details") {
+                    Picker("Side of road", selection: $side) {
+                        Text("Unknown").tag(HazardSide.unknown)
+                        Text("Left").tag(HazardSide.left)
+                        Text("Middle").tag(HazardSide.center)
+                        Text("Right").tag(HazardSide.right)
+                    }
+                    Toggle("May block the road", isOn: $blocksRoad)
+                }
                 Section {
                     ForEach(HazardKind.allCases, id: \.self) { kind in
                         Button(AlertPhrases.label(kind)) {
                             Task {
                                 sending = true
-                                if await model.sendReport(kind: kind) { dismiss() }
+                                if await model.sendReport(kind: kind, side: side, blocksRoad: blocksRoad) { dismiss() }
                                 sending = false
                             }
                         }
                         .disabled(sending || (model.isMoving && !confirmedNotDriving))
                     }
                 } footer: {
-                    Text(model.shareLocationWithReports
-                         ? "Your current position (not your route) is attached so receivers can tell whether it's on their heading. Reports expire after a few minutes."
+                    Text(model.shareLocation
+                         ? "Your current position (not your route) is attached so receivers can tell whether it's ahead of them. Reports expire after 15–30 minutes."
                          : "No location is attached. Receivers will hear “location not verified”. You can opt in under Settings.")
                 }
             }
@@ -48,58 +59,27 @@ struct SettingsView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var joinCode = ""
+    @State private var newConvoyName = "Demo convoy"
+    @State private var roadName = "Demo road"
+    @State private var placeQuery = ""
+    @State private var placeResults: [SavedPlace] = []
+    @State private var choosingDetour = false
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Account") {
-                    if !model.backendConfigured {
-                        Text("This build has no backend configured. Only labeled test alerts are available.")
-                            .foregroundStyle(.secondary)
-                    } else if let signed = model.signedInEmail {
-                        LabeledContent("Signed in", value: signed)
-                        Button("Sign out", role: .destructive) { Task { await model.signOut() } }
-                    } else {
-                        TextField("Email", text: $email)
-                            .textContentType(.username)
-                            .keyboardType(.emailAddress)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        SecureField("Password", text: $password)
-                            .textContentType(.password)
-                        Button("Sign in") {
-                            Task { await model.signIn(email: email, password: password); password = "" }
-                        }
-                        .disabled(email.isEmpty || password.isEmpty)
-                        Text("Use the account you created in the Pudle web app.").font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
+                accountSection
                 if model.isSignedIn {
-                    Section("Convoy") {
-                        Picker("Listening to", selection: $model.selectedConvoyID) {
-                            Text("None").tag(String?.none)
-                            ForEach(model.convoys) { convoy in Text(convoy.name).tag(String?.some(convoy.id)) }
-                        }
-                        HStack {
-                            TextField("12-character invite code", text: $joinCode)
-                                .textInputAutocapitalization(.characters)
-                                .autocorrectionDisabled()
-                            Button("Join") { Task { await model.joinConvoy(code: joinCode); joinCode = "" } }
-                                .disabled(joinCode.count < 12)
-                        }
-                        Button("Refresh convoys") { Task { await model.loadConvoys() } }
-                    }
-                    Section {
-                        Toggle("Attach my position to reports I send", isOn: Binding(
-                            get: { model.shareLocationWithReports },
-                            set: { value in Task { await model.setShareLocation(value) } }))
-                    } header: {
-                        Text("Location sharing")
-                    } footer: {
-                        Text("Off by default. When on, only the single position at the moment you send a report is shared with your convoy, and it is deleted with the report (within about an hour). Your route and movement are never uploaded.")
-                    }
+                    convoySection
+                    locationSection
+                    roadSection
                 }
-                Section("Speech") {
+                routeSection
+                Section("Voice") {
+                    Picker("Personality", selection: $model.persona) {
+                        ForEach(Persona.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }
+                    Toggle("Gemini voices (falls back to iPhone voice)", isOn: $model.cloudVoices)
                     Picker("Distances", selection: $model.units) {
                         Text("Feet / miles").tag(DistanceUnits.imperial)
                         Text("Meters / km").tag(DistanceUnits.metric)
@@ -107,12 +87,130 @@ struct SettingsView: View {
                 }
                 Section("Build") {
                     LabeledContent("Version", value: model.config.versionDescription)
-                    LabeledContent("Located reports", value: model.hazardEventsAvailable ? "Supported by backend" : "Backend migration missing")
                 }
             }
             .navigationTitle("Settings")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task { if model.isSignedIn { await model.loadConvoys() } }
+        }
+    }
+
+    private var accountSection: some View {
+        Section("Account") {
+            if !model.backendConfigured {
+                Text("This build has no backend configured. Only labeled test alerts are available.")
+                    .foregroundStyle(.secondary)
+            } else if let signed = model.signedInEmail {
+                LabeledContent("Signed in", value: signed)
+                Button("Sign out", role: .destructive) { Task { await model.signOut() } }
+            } else {
+                TextField("Email", text: $email)
+                    .textContentType(.username)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                SecureField("Password (8+ characters)", text: $password)
+                    .textContentType(.password)
+                HStack {
+                    Button("Sign in") { Task { await model.signIn(email: email, password: password); password = "" } }
+                    Spacer()
+                    Button("Create account") { Task { await model.signUp(email: email, password: password); password = "" } }
+                }
+                .disabled(email.isEmpty || password.count < 8)
+            }
+        }
+    }
+
+    private var convoySection: some View {
+        Section {
+            Picker("Listening to", selection: $model.selectedConvoyID) {
+                Text("None").tag(String?.none)
+                ForEach(model.convoys) { convoy in Text(convoy.name).tag(String?.some(convoy.id)) }
+            }
+            if let code = model.selectedConvoy?.join_code {
+                LabeledContent("Invite code") {
+                    Text(code).font(.body.monospaced()).textSelection(.enabled)
+                }
+            }
+            HStack {
+                TextField("12-character invite code", text: $joinCode)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                Button("Join") { Task { await model.joinConvoy(code: joinCode); joinCode = "" } }
+                    .disabled(joinCode.count < 12)
+            }
+            HStack {
+                TextField("New convoy name", text: $newConvoyName)
+                Button("Create") { Task { await model.createConvoy(name: newConvoyName) } }
+                    .disabled(newConvoyName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } header: {
+            Text("Convoy")
+        } footer: {
+            Text("Only members of the same convoy receive each other's reports. Convoys last 24 hours.")
+        }
+    }
+
+    private var locationSection: some View {
+        Section {
+            Toggle("Share hazard locations with my convoy", isOn: Binding(
+                get: { model.shareLocation },
+                set: { value in Task { await model.setShareLocation(value) } }))
+        } header: {
+            Text("Location sharing")
+        } footer: {
+            Text("Needed for camera reports and the demo road. Only the single position of a hazard you confirm is shared, and it is deleted with the report (15–30 minutes, plus cleanup). Your own movement is never uploaded. Turning this off removes positions from your stored reports.")
+        }
+    }
+
+    private var roadSection: some View {
+        Section {
+            if let corridor = model.corridor {
+                LabeledContent("Active", value: String(format: "%@ · %.1f km", corridor.name, corridor.lengthMeters / 1000))
+            }
+            if model.recordingRoad {
+                LabeledContent("Recording", value: "\(model.recordedPoints) points")
+                TextField("Road name", text: $roadName)
+                Button("Finish and save road") { Task { await model.finishRecordingRoad(name: roadName) } }
+            } else {
+                Button("Record demo road (drive it once)") { model.startRecordingRoad() }
+                    .disabled(model.phase != .active)
+            }
+        } header: {
+            Text("Demo road")
+        } footer: {
+            Text("Start a drive, tap Record, and drive the demo road in the direction cars will travel. Pudle then warns following cars only when they are on this road, going the same way, within about a mile of the hazard. The recorded line is shared with your convoy for 7 days.")
+        }
+    }
+
+    private var routeSection: some View {
+        Section {
+            LabeledContent("Destination", value: model.destination?.name ?? "Not set")
+            LabeledContent("Detour waypoint", value: model.detour?.name ?? "Not set")
+            Picker("Search sets", selection: $choosingDetour) {
+                Text("Destination").tag(false)
+                Text("Detour").tag(true)
+            }
+            .pickerStyle(.segmented)
+            HStack {
+                TextField("Search a place or address", text: $placeQuery)
+                    .autocorrectionDisabled()
+                Button("Search") { Task { placeResults = await model.searchPlaces(placeQuery) } }
+                    .disabled(placeQuery.isEmpty)
+            }
+            ForEach(placeResults, id: \.coordinateString) { place in
+                Button(place.name) {
+                    if choosingDetour { model.detour = place } else { model.destination = place }
+                    placeResults = []
+                    placeQuery = ""
+                }
+            }
+            Button("Use my current position as the detour point") { model.useCurrentPositionAsDetour() }
+            if model.detour != nil { Button("Clear detour", role: .destructive) { model.detour = nil } }
+        } header: {
+            Text("Demo route (for reroute)")
+        } footer: {
+            Text("Pudle can't change Google Maps' active route. On a blockage it offers to reopen Google Maps to this destination through your reviewed detour point. Google Maps then plans the actual route — check it before recording.")
         }
     }
 }
@@ -129,12 +227,16 @@ struct DiagnosticsView: View {
                 } else {
                     Text("No spoken alerts yet.")
                 }
+                if let p50 = LatencyStats.percentile(model.detectorLatencies, 50),
+                   let p95 = LatencyStats.percentile(model.detectorLatencies, 95) {
+                    Text(String(format: "Frame → Gemini answer: n=%d · median %.2fs · p95 %.2fs", model.detectorLatencies.count, p50, p95))
+                }
                 ShareLink(item: model.evidenceReport()) { Label("Export evidence (no locations)", systemImage: "square.and.arrow.up") }
             }
             Section("Deliveries") {
                 ForEach(model.deliveries) { record in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(record.outcome.rawValue.capitalized) · \(record.source == .labeledTest ? "TEST" : "convoy") · \(record.kind.rawValue)")
+                        Text("\(record.outcome.rawValue.capitalized) · \(record.source == .labeledTest ? "TEST" : record.source.rawValue) · \(record.kind.rawValue)")
                             .font(.callout.bold())
                         Text("\(record.receivedAt.formatted(date: .omitted, time: .standard)) · \(record.appState)")
                             .font(.caption)
@@ -157,20 +259,21 @@ struct LimitationsView: View {
         List {
             Section("What works") {
                 Text("Spoken reports while Google Maps or another app is in front, during a drive you started, while iOS keeps delivering Pudle's location (blue indicator visible).")
-                Text("Mute and Stop drive from the notification (long-press it) or inside Pudle.")
+                Text("Dashcam mode: Gemini checks about one frame per second; Pudle asks before sharing, and you answer by voice or tap.")
+                Text("Mute, Stop drive and Reroute from the notification (long-press it) or inside Pudle.")
             }
             Section("What Pudle does not do") {
-                Text("It does not see the road. Reports come from convoy members or are labeled tests.")
-                Text("It does not read Google Maps or your route.")
+                Text("Camera detections are possible observations, not measured accuracy. Misses and false alarms happen.")
+                Text("The dashcam only runs while Pudle is on screen (iOS rule).")
+                Text("It does not read Google Maps or your route, and cannot change Google Maps' route by itself.")
                 Text("A report without a position is never described as ahead of you.")
-                Text("“Ahead on your heading” is based on positions and directions, not a map. Very close parallel lanes or ramps cannot be excluded.")
-                Text("No braking, steering, emergency calls, face or plate recognition.")
+                Text("“Ahead” uses the recorded demo road when available, otherwise positions and headings. Parallel roads and ramps can still confuse it.")
+                Text("No braking, steering, emergency calls, face or plate recognition. Camera frames are not stored.")
             }
             Section("When alerts can be missed") {
                 Text("If you deny location, force-quit Pudle, or iOS ends it, alerts stop until you reopen Pudle and start a drive.")
                 Text("Offline means new reports cannot arrive. Silence is not an all-clear.")
                 Text("During a phone call, iOS may block spoken audio. Pudle then shows a notification instead.")
-                Text("Silent mode / Focus settings and Bluetooth routing are controlled by iOS; check the delivery log.")
             }
         }
         .navigationTitle("Limitations")

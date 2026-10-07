@@ -3,21 +3,31 @@ import Foundation
 /// Hazard categories Pudle can speak about. Raw values match the database `kind` check.
 /// Unknown strings are rejected; free text is never spoken.
 public enum HazardKind: String, Codable, CaseIterable, Sendable {
-    case tree
+    case tree            // fallen tree or branch
     case debris
     case stoppedVehicle = "stopped_vehicle"
+    case animal
+    case pothole
+    case object
     case other
 }
 
 /// Where a report came from. Spoken copy always reflects provenance.
 public enum HazardSource: String, Codable, Sendable {
-    /// A signed-in convoy member confirmed the report by hand.
+    /// A signed-in convoy member tapped it in (passenger or parked).
     case convoyMember = "convoy_member"
+    /// The reporter's dashcam model flagged a possible hazard AND the driver confirmed it by voice or tap.
+    case driverConfirmedCamera = "driver_confirmed_camera"
     /// A synthetic, clearly labeled event used to demonstrate the alert lifecycle.
     case labeledTest = "labeled_test"
 }
 
-/// A consented position attached to a report. Optional: most reports have none.
+/// Which side of the reporter's lane the hazard was on.
+public enum HazardSide: String, Codable, CaseIterable, Sendable {
+    case left, right, center, unknown
+}
+
+/// A consented position attached to a report. Optional: many reports have none.
 public struct HazardLocation: Codable, Equatable, Sendable {
     public var latitude: Double
     public var longitude: Double
@@ -53,6 +63,9 @@ public struct HazardEvent: Equatable, Sendable, Identifiable {
     public var schemaVersion: Int
     public var kind: HazardKind
     public var source: HazardSource
+    public var side: HazardSide
+    /// Reporter believed it may block the road. Always spoken as "possible".
+    public var blocksRoad: Bool
     public var convoyID: String?
     public var reporterID: String?
     /// When the reporter observed the hazard (defaults to createdAt).
@@ -63,12 +76,15 @@ public struct HazardEvent: Equatable, Sendable, Identifiable {
     public var location: HazardLocation?
 
     public init(id: String, schemaVersion: Int = HazardEvent.currentSchemaVersion, kind: HazardKind,
-                source: HazardSource, convoyID: String? = nil, reporterID: String? = nil,
+                source: HazardSource, side: HazardSide = .unknown, blocksRoad: Bool = false,
+                convoyID: String? = nil, reporterID: String? = nil,
                 observedAt: Date? = nil, createdAt: Date, expiresAt: Date, location: HazardLocation? = nil) {
         self.id = id
         self.schemaVersion = schemaVersion
         self.kind = kind
         self.source = source
+        self.side = side
+        self.blocksRoad = blocksRoad
         self.convoyID = convoyID
         self.reporterID = reporterID
         self.observedAt = observedAt ?? createdAt

@@ -15,10 +15,11 @@ private func legacyRow(id: String = UUID().uuidString, kind: String = "debris", 
 }
 
 private func hazardRow(lat: Double? = nil, lon: Double? = nil, acc: Double? = nil, heading: Double? = nil,
-                       version: Int = 1, source: String = "convoy_member") -> HazardEventRow {
+                       version: Int = 1, source: String = "convoy_member", side: String? = "right",
+                       blocks: Bool? = false) -> HazardEventRow {
     HazardEventRow(id: UUID().uuidString, schema_version: version, convoy_id: convoy, reporter_id: alice,
-                   kind: "tree", source: source, observed_at: iso(-10), created_at: iso(-5), expires_at: iso(295),
-                   latitude: lat, longitude: lon, accuracy_m: acc, heading_deg: heading)
+                   kind: "tree", source: source, observed_at: iso(-10), created_at: iso(-5), expires_at: iso(895),
+                   latitude: lat, longitude: lon, accuracy_m: acc, heading_deg: heading, side: side, blocks_road: blocks)
 }
 
 // Charlotte-area fixture, heading due north at 20 m/s.
@@ -57,9 +58,17 @@ final class DecodingTests: XCTestCase {
     func testRejectsStaleFutureExpiredAndOverlongEvents() {
         XCTAssertEqual(rejection(legacyRow(created: 120, expires: 200)), .createdInFuture)
         XCTAssertEqual(rejection(legacyRow(created: -130, expires: -10)), .expired)
-        XCTAssertEqual(rejection(legacyRow(created: -5, expires: 3_600)), .lifetimeTooLong)
-        XCTAssertEqual(rejection(legacyRow(created: -700, expires: 100)), .tooOld)
+        XCTAssertEqual(rejection(legacyRow(created: -5, expires: 3_700)), .lifetimeTooLong)
+        XCTAssertEqual(rejection(legacyRow(created: -3_650, expires: 100)), .lifetimeTooLong)
         XCTAssertEqual(rejection(legacyRow(created: 5, expires: 5)), .badTimestamp)
+    }
+
+    func testCameraRowKeepsSideAndBlockage() throws {
+        let event = try EventDecoder.validate(hazardRow(lat: 35, lon: -80, acc: 12, heading: 90, source: "driver_confirmed_camera",
+                                                        side: "left", blocks: true), expectedConvoy: convoy, now: now).get()
+        XCTAssertEqual(event.side, .left)
+        XCTAssertTrue(event.blocksRoad)
+        XCTAssertEqual(event.source, .driverConfirmedCamera)
     }
 
     func testHazardRowLocationMustBeCompleteAndInRange() {
@@ -70,6 +79,9 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(rejection(hazardRow(heading: 90)), .invalidLocation)
         XCTAssertEqual(rejection(hazardRow(version: 2)), .unsupportedSchema)
         XCTAssertEqual(rejection(hazardRow(source: "camera_model")), .unknownSource)
+        XCTAssertEqual(rejection(hazardRow(source: "labeled_test")), .unknownSource)
+        XCTAssertEqual(rejection(hazardRow(source: "driver_confirmed_camera")), .invalidLocation)
+        XCTAssertEqual(rejection(hazardRow(lat: 35, lon: -80, acc: 12, side: "upward")), .malformed)
     }
 
     private func rejection(_ row: LegacyObstacleRow) -> EventRejection? {
@@ -92,7 +104,7 @@ final class RoadRelevanceTests: XCTestCase {
     }
 
     func testSameHeadingInFrontIsAhead() {
-        guard case .ahead(let d) = eval(hazard(meters: 800, bearing: 0), fix()) else { return XCTFail() }
+        guard case .ahead(let d, false) = eval(hazard(meters: 800, bearing: 0), fix()) else { return XCTFail() }
         XCTAssertEqual(d, 800, accuracy: 2)
     }
 
@@ -120,9 +132,9 @@ final class RoadRelevanceTests: XCTestCase {
     }
 
     func testStationaryReceiverNeverGetsAhead() {
-        let result = eval(hazard(meters: 200, bearing: 0), fix(speed: 0))
+        let result = eval(hazard(meters: 200, bearing: 0), fix(course: nil, speed: 0))
         guard case .nearbyDirectionUnverified = result else { return XCTFail("\(result)") }
-        XCTAssertEqual(eval(hazard(meters: 2_000, bearing: 0), fix(speed: 0)), .notRelevant("far while course unknown"))
+        XCTAssertEqual(eval(hazard(meters: 2_000, bearing: 0), fix(course: nil, speed: 0)), .notRelevant("far while course unknown"))
     }
 
     func testStaleOrInaccurateReceiverIsUnknown() {
@@ -144,7 +156,7 @@ final class RoadRelevanceTests: XCTestCase {
 private extension Relevance {
     var distance: Double? {
         switch self {
-        case .ahead(let d), .nearbyDirectionUnverified(let d): return d
+        case .ahead(let d, _), .nearbyDirectionUnverified(let d): return d
         default: return nil
         }
     }
@@ -163,8 +175,46 @@ final class PhraseTests: XCTestCase {
             XCTAssertFalse(text.contains("feet") || text.contains("mile"), text)
             XCTAssertTrue(text.contains("reported"), text)
         }
-        let ahead = AlertPhrases.phrase(for: event(), relevance: .ahead(distanceMeters: 480), units: .imperial)!
-        XCTAssertEqual(ahead, "Pudle. Debris reported about a quarter mile ahead on your heading, by a convoy member.")
+        let ahead = AlertPhrases.phrase(for: event(), relevance: .ahead(distanceMeters: 480, onRecordedRoad: true), units: .imperial)!
+        XCTAssertEqual(ahead, "Heads up. Some debris, about a quarter mile ahead, reported by a convoy member.")
+    }
+
+    func testCameraReportWithSideAndDistance() {
+        var e = event(.driverConfirmedCamera, kind: .object)
+        e.side = .right
+        XCTAssertEqual(AlertPhrases.phrase(for: e, relevance: .ahead(distanceMeters: 1_609, onRecordedRoad: true), units: .imperial),
+                       "Heads up. Something on the right side of the road, about a mile ahead, reported by a Pudle driver.")
+        XCTAssertEqual(AlertPhrases.phrase(for: e, relevance: .ahead(distanceMeters: 1_609, onRecordedRoad: true), units: .imperial, persona: .buddy)?
+                        .hasPrefix("Yo, heads up."), true)
+    }
+
+    func testBlockageIsAlwaysPossibleAndSuggestsReroute() {
+        var e = event(.driverConfirmedCamera, kind: .tree)
+        e.blocksRoad = true
+        let text = AlertPhrases.phrase(for: e, relevance: .ahead(distanceMeters: 800, onRecordedRoad: true), units: .imperial)!
+        XCTAssertEqual(text, "Heads up. Possible road blockage about half a mile ahead: a fallen branch, reported by a Pudle driver. You might want to reroute.")
+        let unverified = AlertPhrases.phrase(for: e, relevance: .nearbyDirectionUnverified(distanceMeters: 100), units: .imperial)!
+        XCTAssertTrue(unverified.contains("possibly blocking"))
+        XCTAssertFalse(unverified.contains("ahead"))
+    }
+
+    func testCameraPromptsAskForConfirmation() {
+        let side = AlertPhrases.cameraPrompt(kind: .object, side: .right, blocksRoad: false, persona: .copilot)
+        XCTAssertEqual(side, "Heads up. Possible object on the right side of the road coming up, in case you didn't notice. Want me to warn drivers behind you? Say report it, or cancel.")
+        let block = AlertPhrases.cameraPrompt(kind: .tree, side: .center, blocksRoad: true, persona: .buddy)
+        XCTAssertTrue(block.hasPrefix("Yo, heads up. Looks like a fallen branch might be blocking the road ahead."))
+        XCTAssertTrue(AlertPhrases.cameraPrompt(kind: .animal, side: .left, blocksRoad: false, persona: .pro).contains("Possible animal on the left"))
+    }
+
+    func testVoiceIntent() {
+        XCTAssertEqual(VoiceIntent.parse("Oh shoot, go ahead and report it"), .confirm)
+        XCTAssertEqual(VoiceIntent.parse("Yeah"), .confirm)
+        XCTAssertEqual(VoiceIntent.parse("yep do it"), .confirm)
+        XCTAssertEqual(VoiceIntent.parse("No, don't report it"), .cancel)
+        XCTAssertEqual(VoiceIntent.parse("cancel"), .cancel)
+        XCTAssertEqual(VoiceIntent.parse("nah"), .cancel)
+        XCTAssertEqual(VoiceIntent.parse("what was that"), .unknown)
+        XCTAssertEqual(VoiceIntent.parse(""), .unknown)
     }
 
     func testUnlocatedConvoyReportCopy() {
@@ -187,7 +237,7 @@ final class PhraseTests: XCTestCase {
         XCTAssertEqual(AlertPhrases.spokenDistance(740, units: .metric), "about 700 meters")
         XCTAssertEqual(AlertPhrases.spokenDistance(2_300, units: .metric), "about 2.5 kilometers")
         XCTAssertEqual(AlertPhrases.spokenDistance(150, units: .imperial), "about 500 feet")
-        XCTAssertEqual(AlertPhrases.spokenDistance(1_609, units: .imperial), "about 1 mile")
+        XCTAssertEqual(AlertPhrases.spokenDistance(1_609, units: .imperial), "about a mile")
         XCTAssertEqual(AlertPhrases.spokenDistance(800, units: .imperial), "about half a mile")
     }
 }
@@ -257,10 +307,32 @@ final class AlertPolicyTests: XCTestCase {
         XCTAssertEqual(spoken, p.maxPerMinute)
     }
 
+    func testFarReportIsSpokenWhenTheCarApproaches() {
+        // Regression: a report first seen too far away used to be consumed and never spoken.
+        var p = activePolicy()
+        let e = event(location: hazard(meters: 2_600, bearing: 0))
+        XCTAssertEqual(p.decide(e, receiver: fix(), now: now), .suppress(.notRelevantYet("far")))
+        let closer = TestEvents.offset(latitude: base.lat, longitude: base.lon, meters: 1_200, bearingDegrees: 0)
+        var later = fix()
+        later.latitude = closer.0; later.longitude = closer.1; later.timestamp = now + 30
+        guard case .speak(_, .ahead(let d, _)) = p.decide(e, receiver: later, now: now + 30) else { return XCTFail() }
+        XCTAssertEqual(d, 1_400, accuracy: 5)
+        XCTAssertEqual(p.decide(e, receiver: later, now: now + 32), .suppress(.duplicate))
+    }
+
+    func testRateLimitedEventIsNotLost() {
+        var p = activePolicy()
+        p.maxPerMinute = 1
+        guard case .speak = p.decide(event(kind: .tree), receiver: nil, now: now) else { return XCTFail() }
+        let e = event(kind: .animal)
+        XCTAssertEqual(p.decide(e, receiver: nil, now: now + 1), .suppress(.rateLimited))
+        guard case .speak = p.decide(e, receiver: nil, now: now + 61) else { return XCTFail() }
+    }
+
     func testIrrelevantLocatedEventIsSilent() {
         var p = activePolicy()
         let decision = p.decide(event(location: hazard(meters: 400, bearing: 0, heading: 180)), receiver: fix(), now: now)
-        XCTAssertEqual(decision, .suppress(.notRelevant("opposite direction")))
+        XCTAssertEqual(decision, .suppress(.notRelevantYet("opposite direction")))
     }
 
     func testResetForgetsHistory() {
@@ -268,7 +340,7 @@ final class AlertPolicyTests: XCTestCase {
         let e = event()
         _ = p.decide(e, receiver: nil, now: now)
         p.reset()
-        XCTAssertEqual(p.seenCount, 0)
+        XCTAssertEqual(p.consumedCount, 0)
     }
 }
 
@@ -296,5 +368,122 @@ final class StatusTests: XCTestCase {
         XCTAssertNil(LatencyStats.percentile([], 50))
         XCTAssertEqual(LatencyStats.percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 50), 5)
         XCTAssertEqual(LatencyStats.percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 95), 10)
+    }
+}
+
+final class CorridorTests: XCTestCase {
+    /// A road recorded heading north from `base` for 3 km, with a bend east after 1.5 km.
+    func road() -> RoadCorridor {
+        var points: [RoadCorridor.Point] = []
+        var lat = base.lat, lon = base.lon
+        points.append(.init(lat, lon))
+        for _ in 0..<30 {   // 1.5 km north in 50 m steps
+            (lat, lon) = TestEvents.offset(latitude: lat, longitude: lon, meters: 50, bearingDegrees: 0)
+            points.append(.init(lat, lon))
+        }
+        for _ in 0..<30 {   // then 1.5 km north-east
+            (lat, lon) = TestEvents.offset(latitude: lat, longitude: lon, meters: 50, bearingDegrees: 45)
+            points.append(.init(lat, lon))
+        }
+        return RoadCorridor(id: "c", name: "Demo road", points: points)!
+    }
+
+    func along(_ meters: Double) -> (Double, Double) {
+        let c = road()
+        // Walk the polyline to the requested distance.
+        var remaining = meters
+        for i in 0..<(c.points.count - 1) {
+            let a = c.points[i], b = c.points[i + 1]
+            let d = Geo.distance(lat1: a.latitude, lon1: a.longitude, lat2: b.latitude, lon2: b.longitude)
+            if remaining <= d {
+                let bearing = Geo.bearing(lat1: a.latitude, lon1: a.longitude, lat2: b.latitude, lon2: b.longitude)
+                return TestEvents.offset(latitude: a.latitude, longitude: a.longitude, meters: remaining, bearingDegrees: bearing)
+            }
+            remaining -= d
+        }
+        return (c.points.last!.latitude, c.points.last!.longitude)
+    }
+
+    func receiver(at meters: Double, course: Double?, speed: Double = 8, sideways: Double = 0) -> ReceiverFix {
+        var p = along(meters)
+        if sideways != 0 { p = TestEvents.offset(latitude: p.0, longitude: p.1, meters: abs(sideways), bearingDegrees: sideways > 0 ? 90 : 270) }
+        return ReceiverFix(latitude: p.0, longitude: p.1, accuracyMeters: 8, courseDegrees: course, speedMetersPerSecond: speed,
+                           timestamp: now - 1)
+    }
+
+    func hazardAt(_ meters: Double, sideways: Double = 6) -> HazardLocation {
+        let p = along(meters)
+        let q = TestEvents.offset(latitude: p.0, longitude: p.1, meters: sideways, bearingDegrees: 90)
+        return HazardLocation(latitude: q.0, longitude: q.1, accuracyMeters: 10, headingDegrees: 0)
+    }
+
+    func eval(_ h: HazardLocation, _ r: ReceiverFix) -> Relevance {
+        RoadRelevance.evaluate(hazard: h, receiver: r, now: now, corridor: road())
+    }
+
+    func testAheadAroundTheBendUsesRoadDistance() {
+        // Receiver at 1.0 km, hazard at 2.4 km (past the bend): straight-line bearing is off,
+        // but along the road it is 1.4 km ahead in our direction.
+        guard case .ahead(let d, true) = eval(hazardAt(2_400), receiver(at: 1_000, course: 0)) else { return XCTFail() }
+        XCTAssertEqual(d, 1_400, accuracy: 15)
+    }
+
+    func testOneMileWindow() {
+        XCTAssertEqual(eval(hazardAt(2_900), receiver(at: 500, course: 0)), .notRelevant("not yet in range"))
+        guard case .ahead = eval(hazardAt(2_000), receiver(at: 500, course: 0)) else { return XCTFail() }
+    }
+
+    func testOppositeDirectionOnSameRoad() {
+        XCTAssertEqual(eval(hazardAt(1_200), receiver(at: 600, course: 180)), .notRelevant("opposite direction"))
+    }
+
+    func testAlreadyPassed() {
+        XCTAssertEqual(eval(hazardAt(400), receiver(at: 900, course: 0)), .notRelevant("behind or passed"))
+    }
+
+    func testParallelStreetIsNotWarned() {
+        let result = eval(hazardAt(1_200), receiver(at: 800, course: 0, sideways: 150))
+        XCTAssertEqual(result, .notRelevant("off the recorded road"))
+    }
+
+    func testSlowDrivingStillGetsAheadWhenCourseIsKnown() {
+        guard case .ahead = eval(hazardAt(1_000), receiver(at: 600, course: 0, speed: 1.5)) else { return XCTFail() }
+    }
+
+    func testCourseEstimatorFromSlowFixes() {
+        let fixes = (0..<6).map { i -> ReceiverFix in
+            let p = TestEvents.offset(latitude: base.lat, longitude: base.lon, meters: Double(i) * 4, bearingDegrees: 30)
+            return ReceiverFix(latitude: p.0, longitude: p.1, accuracyMeters: 6, courseDegrees: nil, speedMetersPerSecond: 1,
+                               timestamp: now + Double(i) * 2)
+        }
+        XCTAssertEqual(CourseEstimator.course(from: fixes)!, 30, accuracy: 1)
+        XCTAssertNil(CourseEstimator.course(from: Array(fixes.prefix(2))))
+    }
+}
+
+final class DetectionFilterTests: XCTestCase {
+    typealias O = DetectionFilter.Observation
+
+    func testTwoAgreeingFramesTriggerOncePerCooldown() {
+        var f = DetectionFilter()
+        XCTAssertNil(f.add(O(kind: .tree, side: .right, blocksRoad: false, confidence: 0.7, at: now), now: now))
+        let hit = f.add(O(kind: .debris, side: .right, blocksRoad: true, confidence: 0.75, at: now + 1), now: now + 1)
+        XCTAssertEqual(hit?.kind, .debris)
+        XCTAssertEqual(hit?.blocksRoad, true)
+        XCTAssertNil(f.add(O(kind: .tree, side: .right, blocksRoad: false, confidence: 0.95, at: now + 5), now: now + 5))
+        XCTAssertNotNil(f.add(O(kind: .tree, side: .left, blocksRoad: false, confidence: 0.95, at: now + 40), now: now + 40))
+    }
+
+    func testLowConfidenceAndStaleFramesAreIgnored() {
+        var f = DetectionFilter()
+        XCTAssertNil(f.add(O(kind: .tree, side: .right, blocksRoad: false, confidence: 0.3, at: now), now: now))
+        XCTAssertNil(f.add(O(kind: .tree, side: .right, blocksRoad: false, confidence: 0.6, at: now), now: now))
+        XCTAssertNil(f.add(nil, now: now + 3))
+        XCTAssertNil(f.add(O(kind: .tree, side: .right, blocksRoad: false, confidence: 0.6, at: now + 9), now: now + 9))
+    }
+
+    func testSingleVeryConfidentFrame() {
+        var f = DetectionFilter()
+        XCTAssertEqual(f.add(O(kind: .animal, side: .center, blocksRoad: false, confidence: 0.9, at: now), now: now)?.kind, .animal)
     }
 }

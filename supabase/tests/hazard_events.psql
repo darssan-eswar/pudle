@@ -20,6 +20,7 @@ insert into auth.users(id) values
 
 \ir ../migrations/202609250001_convoy_obstacles.sql
 \ir ../migrations/202610070001_hazard_events_v1.sql
+\ir ../migrations/202610070002_retention_cleanup.sql
 
 create function pg_temp.as_user(p uuid) returns void language sql as $$
   select set_config('request.jwt.claim.sub', coalesce(p::text, ''), false)
@@ -129,7 +130,7 @@ set role authenticated;
 
 -- 8. Users cannot run retention cleanup.
 select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
-select pg_temp.expect_error('select public.purge_expired_hazard_data()', 'permission denied');
+select pg_temp.expect_error('select private.purge_expired_hazard_data()', 'permission denied');
 
 -- 9. Withdrawing consent strips stored positions.
 select public.set_location_consent(false, '2026-10-07');
@@ -160,11 +161,11 @@ do $$ begin
   if (select count(*) from public.hazard_events) != 1 then raise exception 'Expired event still visible'; end if;
 end $$;
 reset role;
-select hazard_events_deleted = 1 as purge_deleted_expired from public.purge_expired_hazard_data();
+select hazard_events_deleted = 1 as purge_deleted_expired from private.purge_expired_hazard_data();
 do $$ begin
   if (select count(*) from public.hazard_events) != 1 then raise exception 'Purge removed a live event or missed an expired one'; end if;
 end $$;
-select pg_temp.expect_error($$select public.purge_expired_hazard_data(interval '2 days')$$, 'Grace period');
+select pg_temp.expect_error($$select private.purge_expired_hazard_data(interval '2 days')$$, 'Grace period');
 
 -- 12. Camera reports: need location; side/blockage stored; blockage lives longer.
 reset role;
@@ -216,7 +217,7 @@ select pg_temp.as_user('11111111-1111-4111-8111-111111111111');
 select public.set_location_consent(false, '2026-10-07');
 reset role;
 do $$ begin
-  if exists (select 1 from public.road_corridors) then raise exception 'Revoking consent left corridors'; end if;
+  if exists (select 1 from public.road_corridors where expires_at > now() or points <> '[[0,0],[0,0]]'::jsonb) then raise exception 'Revoking consent left corridors visible'; end if;
 end $$;
 
 select 'hazard_events checks passed' as result;

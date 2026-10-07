@@ -39,6 +39,15 @@ targets:
         NSLocationAlwaysAndWhenInUseUsageDescription: >-
           Pudle only uses location during a drive you start. "While Using" is enough; Pudle does not need
           "Always" access.
+        NSCameraUsageDescription: >-
+          Dashcam mode sends a small picture from the rear camera about once a second to Pudle's hazard checker
+          (Google Gemini) while a drive is active. Pictures are not saved. Nothing is shared until you confirm a report.
+        NSMicrophoneUsageDescription: >-
+          After Pudle asks whether to report a hazard, it listens for a few seconds for "report it" or "cancel".
+        NSSpeechRecognitionUsageDescription: >-
+          Pudle turns your short spoken answer ("report it" / "cancel") into text, on this iPhone when supported.
+        LSApplicationQueriesSchemes: [comgooglemaps]
+        UIApplicationSupportsIndirectInputEvents: true
         ITSAppUsesNonExemptEncryption: false
         PudleSupabaseURL: $(PUDLE_SUPABASE_URL)
         PudleSupabaseKey: $(PUDLE_SUPABASE_PUBLISHABLE_KEY)

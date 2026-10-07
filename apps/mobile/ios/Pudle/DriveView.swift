@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import PudleCore
 
@@ -11,7 +12,9 @@ struct DriveView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     StatusCard(line: DriveStatusText.headline(model.snapshot))
+                    if let blockage = model.activeBlockage { BlockageCard(event: blockage) }
                     primaryControls
+                    DashcamCard()
                     if model.phase == .active { CapabilityList() }
                     testControls
                     if model.phase == .active || model.isSignedIn {
@@ -24,6 +27,13 @@ struct DriveView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.large)
                         .disabled(!model.isSignedIn || model.selectedConvoyID == nil)
+                    }
+                    if model.destination != nil {
+                        Button { model.navigate() } label: {
+                            Label("Navigate in Google Maps", systemImage: "arrow.triangle.turn.up.right.diamond")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
                     }
                     NavigationLink {
                         DiagnosticsView()
@@ -124,6 +134,115 @@ struct DriveView: View {
     }
 }
 
+struct DashcamCard: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle("Dashcam hazard spotting", isOn: Binding(get: { model.dashcamEnabled }, set: { model.setDashcam($0) }))
+                    .disabled(!model.isSignedIn)
+                if model.cameraRunning {
+                    CameraPreview(session: model.cameraSession.session)
+                        .frame(height: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(alignment: .bottomLeading) {
+                            Text(model.lastDetection.isEmpty ? "Starting…" : model.lastDetection)
+                                .font(.caption.bold())
+                                .padding(6)
+                                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                                .foregroundStyle(.white)
+                                .padding(8)
+                        }
+                }
+                if let prompt = model.cameraPrompt { PromptCard(prompt: prompt) }
+                Text(model.dashcamEnabled ? model.detectorStatus
+                     : "Mount the phone facing the road. Pudle checks about one frame per second with Gemini and asks you before sharing anything. Keep Pudle on screen: iOS pauses the camera otherwise.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } label: {
+            Label("Dashcam", systemImage: "camera.viewfinder")
+        }
+    }
+}
+
+struct PromptCard: View {
+    @EnvironmentObject private var model: AppModel
+    let prompt: CameraPrompt
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(prompt.blocksRoad ? "Possible road blockage" : "Possible \(AlertPhrases.label(prompt.kind).lowercased())")
+                .font(.headline)
+            Text("\(prompt.side == .unknown ? "" : "Side: \(prompt.side.rawValue) · ")Model confidence \(Int(prompt.confidence * 100))% (not a measured accuracy)")
+                .font(.caption)
+            switch prompt.phase {
+            case .asking: Text("Asking you…").font(.callout)
+            case .listening: Label("Listening — say “report it” or “cancel”", systemImage: "mic.fill").font(.callout.bold())
+            case .sending: ProgressView("Sending…")
+            case .done(let message): Text(message).font(.callout.bold())
+            }
+            if !prompt.transcript.isEmpty { Text("Heard: “\(prompt.transcript)”").font(.caption).foregroundStyle(.secondary) }
+            if prompt.phase != .sending {
+                HStack {
+                    Button("Report it") { model.confirmCameraReport() }.buttonStyle(.borderedProminent)
+                    Button("Cancel", role: .cancel) { model.cancelCameraReport() }.buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.2), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+struct BlockageCard: View {
+    @EnvironmentObject private var model: AppModel
+    let event: HazardEvent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Possible road blockage ahead", systemImage: "exclamationmark.octagon.fill")
+                .font(.headline)
+            Text("Reported \(event.createdAt.formatted(date: .omitted, time: .shortened)) by \(event.source == .driverConfirmedCamera ? "a Pudle driver (camera, confirmed)" : "a convoy member").")
+                .font(.caption)
+            Button {
+                model.reroute()
+            } label: {
+                Label(model.detour == nil ? "Open Google Maps" : "Reroute via detour in Google Maps", systemImage: "arrow.triangle.branch")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+struct CameraPreview: UIViewRepresentable {
+    let session: AVCaptureSession
+
+    final class PreviewView: UIView {
+        override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
+        var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+    }
+
+    func makeUIView(context: Context) -> PreviewView {
+        let view = PreviewView()
+        view.previewLayer.session = session
+        view.previewLayer.videoGravity = .resizeAspectFill
+        if let connection = view.previewLayer.connection, connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: PreviewView, context: Context) {}
+}
+
 struct StatusCard: View {
     let line: StatusLine
 
@@ -157,8 +276,13 @@ struct CapabilityList: View {
             VStack(alignment: .leading, spacing: 6) {
                 row("Location", value: locationText, ok: model.snapshot.backgroundLocationRunning)
                 row("Report feed", value: DriveStatusText.feedDetail(model.feed, now: Date()), ok: isLive)
+                row("Demo road", value: model.corridor.map { String(format: "%@ · %.1f km", $0.name, $0.lengthMeters / 1000) }
+                    ?? "None — using heading only", ok: model.corridor != nil)
                 row("Network", value: model.online ? "Connected" : "Offline", ok: model.online)
-                row("Notifications", value: model.notificationsAllowed ? "Allowed (Mute/Stop controls)" : "Off — no lock-screen controls", ok: model.notificationsAllowed)
+                row("Notifications", value: model.notificationsAllowed ? "Allowed (Mute/Stop/Reroute)" : "Off — no lock-screen controls", ok: model.notificationsAllowed)
+                if model.recordingRoad {
+                    row("Recording road", value: "\(model.recordedPoints) points", ok: true)
+                }
                 if let audio = model.audioNote { row("Audio", value: audio, ok: false) }
             }
             .font(.callout)

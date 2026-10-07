@@ -8,11 +8,14 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     static let category = "PUDLE_DRIVE"
     static let muteAction = "PUDLE_MUTE"
     static let stopAction = "PUDLE_STOP"
+    static let blockageCategory = "PUDLE_BLOCKAGE"
+    static let rerouteAction = "PUDLE_REROUTE"
     private static let sessionID = "pudle.drive.session"
 
     private let center = UNUserNotificationCenter.current()
     var onMute: (() -> Void)?
     var onStop: (() -> Void)?
+    var onReroute: (() -> Void)?
     private(set) var allowed = false
 
     override init() {
@@ -20,8 +23,12 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         center.delegate = self
         let mute = UNNotificationAction(identifier: Self.muteAction, title: "Mute Pudle", options: [])
         let stop = UNNotificationAction(identifier: Self.stopAction, title: "Stop drive", options: [.destructive])
+        // Opening another app from the background is not allowed on iOS, so rerouting takes one tap:
+        // the action brings Pudle forward, which then hands the detour to Google Maps.
+        let reroute = UNNotificationAction(identifier: Self.rerouteAction, title: "Reroute in Google Maps", options: [.foreground])
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.category, actions: [mute, stop], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: Self.blockageCategory, actions: [reroute, mute], intentIdentifiers: [], options: []),
         ])
     }
 
@@ -54,13 +61,13 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     /// Visible record of an alert. `withSound` is used only as the fallback when
     /// speech failed; normally the spoken phrase is the alert and this stays silent.
-    func postAlert(title: String, body: String, withSound: Bool) {
+    func postAlert(title: String, body: String, withSound: Bool, blockage: Bool = false) {
         guard allowed else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.categoryIdentifier = Self.category
-        content.interruptionLevel = .active
+        content.categoryIdentifier = blockage ? Self.blockageCategory : Self.category
+        content.interruptionLevel = blockage ? .timeSensitive : .active
         content.sound = withSound ? .default : nil
         content.threadIdentifier = "pudle.alerts"
         center.add(UNNotificationRequest(identifier: "pudle.alert.\(UUID().uuidString)", content: content, trigger: nil))
@@ -73,9 +80,14 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let action = response.actionIdentifier
+        let category = response.notification.request.content.categoryIdentifier
         await MainActor.run {
             if action == Self.muteAction { self.onMute?() }
             if action == Self.stopAction { self.onStop?() }
+            if action == Self.rerouteAction || (action == UNNotificationDefaultActionIdentifier
+                && category == Self.blockageCategory) {
+                self.onReroute?()
+            }
         }
     }
 

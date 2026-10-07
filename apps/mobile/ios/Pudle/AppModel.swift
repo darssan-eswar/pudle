@@ -1,3 +1,5 @@
+import AVFoundation
+import CoreLocation
 import Foundation
 import Network
 import SwiftUI
@@ -10,9 +12,24 @@ struct DiagnosticLine: Identifiable {
     let text: String
 }
 
-/// Orchestrates one driving session: location, feed polling, alert policy and speech.
-/// Every delivery path (backend poll, labeled test) goes through `handle(_:)` so the
-/// same dedupe/freshness/relevance rules apply to all of them.
+/// The dashcam's current question to the driver.
+struct CameraPrompt: Equatable {
+    enum Phase: Equatable { case asking, listening, sending, done(String) }
+    var kind: HazardKind
+    var side: HazardSide
+    var blocksRoad: Bool
+    var label: String
+    var confidence: Double
+    /// Position and time when the frame was captured, not when the driver answered.
+    var capturedAt: Date
+    var location: HazardLocation?
+    var phase: Phase
+    var transcript: String = ""
+}
+
+/// Orchestrates one driving session: location, feed polling, alert policy, speech and dashcam.
+/// Every delivery path (backend poll, labeled test) goes through `handle(_:)` so the same
+/// dedupe/freshness/relevance rules apply to all of them.
 @MainActor
 final class AppModel: ObservableObject {
     // Session
@@ -29,6 +46,22 @@ final class AppModel: ObservableObject {
     @Published private(set) var audioNote: String?
     @Published private(set) var lastFix: ReceiverFix?
 
+    // Dashcam
+    @Published var dashcamEnabled = false
+    @Published private(set) var cameraRunning = false
+    @Published private(set) var cameraPrompt: CameraPrompt?
+    @Published private(set) var detectorStatus = "Off"
+    @Published private(set) var lastDetection: String = ""
+    @Published private(set) var detectorLatencies: [Double] = []
+
+    // Road + reroute
+    @Published private(set) var corridor: RoadCorridor?
+    @Published private(set) var recordingRoad = false
+    @Published private(set) var recordedPoints = 0
+    @Published private(set) var activeBlockage: HazardEvent?
+    @Published var destination: SavedPlace? { didSet { save(destination, "destination") } }
+    @Published var detour: SavedPlace? { didSet { save(detour, "detour") } }
+
     // Evidence
     @Published private(set) var deliveries: [DeliveryRecord] = []
     @Published private(set) var diagnostics: [DiagnosticLine] = []
@@ -37,40 +70,67 @@ final class AppModel: ObservableObject {
     @Published private(set) var signedInEmail: String?
     @Published private(set) var convoys: [BackendClient.Convoy] = []
     @Published var selectedConvoyID: String? {
-        didSet { UserDefaults.standard.set(selectedConvoyID, forKey: "convoyID"); refreshFeedState() }
+        didSet { UserDefaults.standard.set(selectedConvoyID, forKey: "convoyID"); corridor = nil; refreshFeedState() }
     }
     @Published var units: DistanceUnits {
         didSet { UserDefaults.standard.set(units.rawValue, forKey: "units"); policy.units = units }
     }
-    @Published var shareLocationWithReports: Bool {
-        didSet { UserDefaults.standard.set(shareLocationWithReports, forKey: "shareLocation") }
+    @Published var persona: Persona {
+        didSet { UserDefaults.standard.set(persona.rawValue, forKey: "persona"); policy.persona = persona; speech.persona = persona }
     }
+    @Published var cloudVoices: Bool {
+        didSet { UserDefaults.standard.set(cloudVoices, forKey: "cloudVoices"); speech.useCloudVoice = cloudVoices }
+    }
+    @Published private(set) var shareLocation: Bool
     @Published var lastError: String?
 
     let config = AppConfig.current
     private let location = LocationService()
     private let speech = SpeechService()
     private let notifications = NotificationService()
+    private let camera = CameraService()
     private lazy var backend = BackendClient(config: config)
     private var policy = AlertPolicy()
+    private var filter = DetectionFilter()
     private var pollTask: Task<Void, Never>?
     private var testTask: Task<Void, Never>?
+    private var detectTask: Task<Void, Never>?
     private let pathMonitor = NWPathMonitor()
     private var batteryAtStart: Float?
     private var wasLive = false
+    private var loggedPending: Set<String> = []
+    private var lastCorridorFetch: Date?
+
+    var cameraSession: AVCaptureSessionProvider { AVCaptureSessionProvider(session: camera.session) }
 
     init() {
         let defaults = UserDefaults.standard
         units = DistanceUnits(rawValue: defaults.string(forKey: "units") ?? "") ?? (Locale.current.measurementSystem == .metric ? .metric : .imperial)
-        shareLocationWithReports = defaults.bool(forKey: "shareLocation")
+        persona = Persona(rawValue: defaults.string(forKey: "persona") ?? "") ?? .copilot
+        cloudVoices = defaults.object(forKey: "cloudVoices") as? Bool ?? true
+        shareLocation = defaults.bool(forKey: "shareLocation")
         selectedConvoyID = defaults.string(forKey: "convoyID")
+        destination = Self.load("destination")
+        detour = Self.load("detour")
         policy.units = units
+        policy.persona = persona
+        speech.persona = persona
+        speech.useCloudVoice = cloudVoices
+        speech.cloudVoice = { [weak self] text, persona in
+            guard let self else { throw CancellationError() }
+            return try await self.backend.synthesize(text: text, persona: persona, timeout: 4)
+        }
 
         location.onAccessChange = { [weak self] access in self?.locationAccessChanged(access) }
-        location.onFix = { [weak self] fix in self?.lastFix = fix }
+        location.onFix = { [weak self] fix in
+            guard let self else { return }
+            self.lastFix = fix
+            if self.recordingRoad { self.recordedPoints = self.location.recordedRoad.count }
+        }
         location.onError = { [weak self] message in self?.note(message) }
         notifications.onMute = { [weak self] in self?.setMuted(true) }
         notifications.onStop = { [weak self] in self?.stopDrive() }
+        notifications.onReroute = { [weak self] in self?.reroute() }
         speech.onInterruptionChange = { [weak self] message in
             guard let self else { return }
             self.audioNote = message
@@ -103,6 +163,10 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var isMoving: Bool { (lastFix?.speedMetersPerSecond ?? 0) >= 3 }
+    var backendConfigured: Bool { backend.isConfigured }
+    var isSignedIn: Bool { backend.session != nil }
+
     // MARK: Drive lifecycle
 
     func startDrive() {
@@ -111,11 +175,17 @@ final class AppModel: ObservableObject {
         policy.ownUserID = backend.userID
         policy.isActive = true
         policy.isMuted = false
+        policy.corridor = corridor
+        filter.reset()
+        loggedPending.removeAll()
+        activeBlockage = nil
         muted = false
         phase = .active
         driveStartedAt = Date()
         wasLive = false
+        UIApplication.shared.isIdleTimerDisabled = true
         UIDevice.current.isBatteryMonitoringEnabled = true
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         batteryAtStart = UIDevice.current.batteryLevel >= 0 ? UIDevice.current.batteryLevel : nil
         location.start()
         Task {
@@ -124,6 +194,7 @@ final class AppModel: ObservableObject {
         }
         refreshFeedState()
         startPolling()
+        if dashcamEnabled { startDashcam() }
         note("Drive started · location \(locationAccess.rawValue) · build \(config.versionDescription)")
         sayLifecycle(location.canRunInBackground ? AlertPhrases.driveStarted : AlertPhrases.driveStartedForegroundOnly)
     }
@@ -136,9 +207,13 @@ final class AppModel: ObservableObject {
         pollTask?.cancel(); pollTask = nil
         testTask?.cancel(); testTask = nil
         pendingTestAt = nil
+        stopDashcam()
+        if recordingRoad { _ = location.stopRecordingRoad(); recordingRoad = false }
         location.stop()
         lastFix = nil  // travel history is never kept
+        activeBlockage = nil
         notifications.clearAll()
+        UIApplication.shared.isIdleTimerDisabled = false
         if let start = driveStartedAt {
             let minutes = Date().timeIntervalSince(start) / 60
             let end = UIDevice.current.batteryLevel
@@ -167,12 +242,17 @@ final class AppModel: ObservableObject {
     func appMovedToBackground() {
         guard phase == .active else { return }
         notifications.postSessionNotice(muted: muted)
+        if cameraRunning {
+            note("Pudle left the screen: iOS pauses the dashcam until Pudle is back in front")
+            detectorStatus = "Paused — keep Pudle on screen for the dashcam"
+        }
         note("Pudle in background · background location \(location.canRunInBackground ? "running" : "NOT running")")
     }
 
     func appBecameActive() {
         locationAccess = location.access
         Task { await notifications.refreshPermission(); notificationsAllowed = notifications.allowed }
+        if phase == .active && cameraRunning { detectorStatus = "Watching the road" }
     }
 
     private func locationAccessChanged(_ access: LocationAccess) {
@@ -184,18 +264,188 @@ final class AppModel: ObservableObject {
         objectWillChange.send()
     }
 
+    // MARK: Dashcam
+
+    func setDashcam(_ enabled: Bool) {
+        dashcamEnabled = enabled
+        if phase == .active { enabled ? startDashcam() : stopDashcam() }
+    }
+
+    private func startDashcam() {
+        guard backend.isConfigured, backend.session != nil else {
+            detectorStatus = "Sign in to use the dashcam"
+            return
+        }
+        Task {
+            guard await CameraService.requestAccess() else {
+                detectorStatus = "Camera access is off — enable it in Settings"
+                return
+            }
+            _ = await SpeechService.requestListeningPermission()
+            camera.start()
+            cameraRunning = true
+            detectorStatus = "Watching the road"
+            note("Dashcam on (frames go to Gemini, nothing is stored)")
+            detectTask?.cancel()
+            detectTask = Task { [weak self] in await self?.detectionLoop() }
+        }
+    }
+
+    private func stopDashcam() {
+        detectTask?.cancel(); detectTask = nil
+        camera.stop()
+        cameraRunning = false
+        cameraPrompt = nil
+        detectorStatus = "Off"
+    }
+
+    private func detectionLoop() async {
+        var consecutiveErrors = 0
+        while !Task.isCancelled, phase == .active, cameraRunning {
+            let cycleStart = Date()
+            if UIApplication.shared.applicationState == .active, cameraPrompt == nil, online,
+               let snapshot = camera.snapshotJPEG(orientation: UIDevice.current.orientation) {
+                let (jpeg, capturedAt) = snapshot
+                let fixAtCapture = lastFix
+                do {
+                    let started = Date()
+                    let result = try await backend.detectHazard(jpeg: jpeg)
+                    let latency = Date().timeIntervalSince(started)
+                    detectorLatencies.append(latency)
+                    if detectorLatencies.count > 200 { detectorLatencies.removeFirst() }
+                    consecutiveErrors = 0
+                    detectorStatus = "Watching the road"
+                    let kind = HazardKind(rawValue: result.kind)
+                    lastDetection = result.hazard
+                        ? String(format: "%@ · %@ · %.0f%%%@", result.label.isEmpty ? result.kind : result.label, result.side,
+                                 result.confidence * 100, result.blocks_road ? " · may block road" : "")
+                        : "Clear"
+                    let observation = (result.hazard && kind != nil)
+                        ? DetectionFilter.Observation(kind: kind!, side: HazardSide(rawValue: result.side) ?? .unknown,
+                                                      blocksRoad: result.blocks_road, confidence: result.confidence, at: capturedAt)
+                        : nil
+                    if let accepted = filter.add(observation, now: Date()) {
+                        askDriver(about: accepted, label: result.label, capturedAt: capturedAt, fix: fixAtCapture)
+                    }
+                } catch {
+                    consecutiveErrors += 1
+                    detectorStatus = "Hazard checker unavailable: \(error.localizedDescription)"
+                    if consecutiveErrors == 1 { note("Hazard checker error: \(error.localizedDescription)") }
+                }
+            }
+            // About one frame per second, one request in flight; back off on errors.
+            let target: TimeInterval = consecutiveErrors > 0 ? min(10, Double(consecutiveErrors) * 2) : 1.0
+            let remaining = target - Date().timeIntervalSince(cycleStart)
+            if remaining > 0 { try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) }
+        }
+    }
+
+    private func askDriver(about observation: DetectionFilter.Observation, label: String, capturedAt: Date, fix: ReceiverFix?) {
+        var hazardLocation: HazardLocation?
+        if let fix, Date().timeIntervalSince(fix.timestamp) < 10, fix.accuracyMeters <= 50 {
+            // The object is a little ahead of the camera; place it ~25 m along our course.
+            var lat = fix.latitude, lon = fix.longitude
+            if let course = fix.courseDegrees {
+                (lat, lon) = TestEvents.offset(latitude: lat, longitude: lon, meters: 25, bearingDegrees: course)
+            }
+            hazardLocation = HazardLocation(latitude: lat, longitude: lon, accuracyMeters: max(fix.accuracyMeters, 10),
+                                            headingDegrees: fix.courseDegrees)
+        }
+        cameraPrompt = CameraPrompt(kind: observation.kind, side: observation.side, blocksRoad: observation.blocksRoad,
+                                    label: label, confidence: observation.confidence, capturedAt: capturedAt,
+                                    location: hazardLocation, phase: .asking)
+        note(String(format: "Camera flagged possible %@ (%@, %.0f%%)%@", observation.kind.rawValue, observation.side.rawValue,
+                    observation.confidence * 100, hazardLocation == nil ? " · no GPS fix" : ""))
+        let text = AlertPhrases.cameraPrompt(kind: observation.kind, side: observation.side,
+                                             blocksRoad: observation.blocksRoad, persona: persona)
+        guard !muted else { cameraPrompt?.phase = .listening; listenForAnswer(); return }
+        speech.speak(text) { [weak self] outcome in
+            guard let self else { return }
+            switch outcome {
+            case .finished: self.listenForAnswer()
+            case .failed: self.listenForAnswer()
+            case .started: break
+            }
+        }
+    }
+
+    private func listenForAnswer() {
+        guard cameraPrompt?.phase == .asking || cameraPrompt?.phase == .listening else { return }
+        cameraPrompt?.phase = .listening
+        speech.listen(seconds: 7) { [weak self] intent, transcript in
+            guard let self, self.cameraPrompt != nil else { return }
+            self.cameraPrompt?.transcript = transcript
+            switch intent {
+            case .confirm: self.confirmCameraReport()
+            case .cancel: self.cancelCameraReport(spoken: true)
+            case .unknown:
+                // Still on screen: a passenger can tap Report / Cancel. Auto-dismiss after 15 s.
+                self.cameraPrompt?.phase = .done("No answer heard — tap Report or Cancel")
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    if case .done = self?.cameraPrompt?.phase { self?.cameraPrompt = nil }
+                }
+            }
+        }
+    }
+
+    func confirmCameraReport() {
+        guard let prompt = cameraPrompt, let convoyID = selectedConvoyID else {
+            lastError = "Join a convoy to share reports."
+            cameraPrompt = nil
+            return
+        }
+        guard let hazardLocation = prompt.location else {
+            cameraPrompt?.phase = .done("No GPS position — not sent")
+            speech.speak("I don't have your position, so I can't share it.") { _ in }
+            return
+        }
+        guard shareLocation else {
+            cameraPrompt?.phase = .done("Turn on location sharing in Settings first")
+            speech.speak("Location sharing is off, so I can't share it. You can turn it on in settings.") { _ in }
+            return
+        }
+        cameraPrompt?.phase = .sending
+        Task {
+            do {
+                try await backend.report(kind: prompt.kind, convoyID: convoyID, clientEventID: UUID(),
+                                         observedAt: prompt.capturedAt, location: hazardLocation,
+                                         source: .driverConfirmedCamera, side: prompt.side, blocksRoad: prompt.blocksRoad)
+                note("Camera report sent · \(prompt.kind.rawValue) · \(prompt.side.rawValue)\(prompt.blocksRoad ? " · possible blockage" : "")")
+                cameraPrompt?.phase = .done("Sent to your convoy")
+                speech.speak(AlertPhrases.reportSent(blocksRoad: prompt.blocksRoad)) { _ in }
+            } catch {
+                note("Camera report failed: \(error.localizedDescription)")
+                cameraPrompt?.phase = .done("Not sent: \(error.localizedDescription)")
+                speech.speak(AlertPhrases.reportFailed) { _ in }
+            }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            cameraPrompt = nil
+        }
+    }
+
+    func cancelCameraReport(spoken: Bool = false) {
+        guard cameraPrompt != nil else { return }
+        note("Camera report cancelled")
+        cameraPrompt = nil
+        if spoken { speech.speak(AlertPhrases.reportCancelled) { _ in } }
+    }
+
     // MARK: Labeled test events
 
     /// Speaks a labeled synthetic event now (no backend involved).
-    func injectTest(kind: HazardKind = .debris, located: Bool = false) {
+    func injectTest(kind: HazardKind = .debris, located: Bool = false, blocksRoad: Bool = false) {
         var hazardLocation: HazardLocation?
         if located, let fix = lastFix {
             let course = fix.courseDegrees ?? 0
-            let point = TestEvents.offset(latitude: fix.latitude, longitude: fix.longitude, meters: 400, bearingDegrees: course)
+            let point = TestEvents.offset(latitude: fix.latitude, longitude: fix.longitude, meters: 800, bearingDegrees: course)
             hazardLocation = HazardLocation(latitude: point.0, longitude: point.1, accuracyMeters: 10,
                                             headingDegrees: fix.courseDegrees)
         }
-        handle(TestEvents.make(kind: kind, now: Date(), location: hazardLocation), via: "test")
+        var event = TestEvents.make(kind: kind, now: Date(), location: hazardLocation)
+        event.blocksRoad = blocksRoad
+        event.side = .right
+        handle(event, via: "test")
     }
 
     /// Schedules a labeled test so the user can switch to Google Maps or lock the phone first.
@@ -224,46 +474,58 @@ final class AppModel: ObservableObject {
         let decision = policy.decide(event, receiver: lastFix, now: receivedAt)
         let state = Self.appStateDescription()
         switch decision {
-        case .speak(let phrase, _):
+        case .speak(let phrase, let relevance):
             let record = DeliveryRecord(eventID: event.id, kind: event.kind, source: event.source, receivedAt: receivedAt,
-                                        appState: state, outcome: .spoken, note: "\(path) · route \(speech.currentRoute)")
+                                        appState: state, outcome: .spoken,
+                                        note: "\(path) · \(Self.describe(relevance)) · route \(speech.currentRoute)")
             deliveries.insert(record, at: 0)
             trimLogs()
             let recordID = record.id
             let createdAt = event.createdAt
+            if event.blocksRoad, case .ahead = relevance { activeBlockage = event }
             speech.speak(phrase) { [weak self] outcome in
                 guard let self else { return }
                 switch outcome {
-                case .started(let at):
+                case .started(let at, let voice):
                     self.updateDelivery(recordID) {
                         $0.finishedAt = at
-                        $0.note += String(format: " · speech %.2fs after receipt, %.1fs after report", at.timeIntervalSince(receivedAt), at.timeIntervalSince(createdAt))
+                        $0.note += String(format: " · %@ · speech %.2fs after receipt, %.1fs after report", voice,
+                                          at.timeIntervalSince(receivedAt), at.timeIntervalSince(createdAt))
                     }
                 case .finished:
                     break
                 case .failed(let why):
                     self.updateDelivery(recordID) { $0.outcome = .failed; $0.note += " · \(why)" }
                     if why.hasPrefix("Audio session") {
-                        // Visible fallback with the standard sound. Labeled as a notification, not speech.
-                        self.notifications.postAlert(title: "Pudle (not spoken)", body: phrase, withSound: true)
+                        self.notifications.postAlert(title: "Pudle (not spoken)", body: phrase, withSound: true,
+                                                     blockage: event.blocksRoad)
                         self.updateDelivery(recordID) { $0.outcome = .notified }
                     }
                 }
             }
-            if UIApplication.shared.applicationState != .active {
-                notifications.postAlert(title: event.source == .labeledTest ? "Pudle test alert" : "Pudle report",
-                                        body: phrase, withSound: false)
+            if UIApplication.shared.applicationState != .active || event.blocksRoad {
+                notifications.postAlert(title: event.blocksRoad ? "Possible road blockage ahead" :
+                                            (event.source == .labeledTest ? "Pudle test alert" : "Pudle report"),
+                                        body: event.blocksRoad ? phrase + " Tap to reroute in Google Maps." : phrase,
+                                        withSound: false, blockage: event.blocksRoad)
             }
         case .suppress(let reason):
             switch reason {
             case .duplicate, .driveNotActive:
-                return  // repeated polls of the same row are expected; not worth logging
+                return
+            case .notRelevantYet, .rateLimited:
+                // Re-checked every poll; log only the first time per event to keep the log readable.
+                guard !loggedPending.contains(event.id) else { return }
+                loggedPending.insert(event.id)
+                deliveries.insert(DeliveryRecord(eventID: event.id, kind: event.kind, source: event.source,
+                                                 receivedAt: receivedAt, appState: state, outcome: .suppressed,
+                                                 note: "\(path) · \(Self.describe(reason))"), at: 0)
             default:
                 deliveries.insert(DeliveryRecord(eventID: event.id, kind: event.kind, source: event.source,
                                                  receivedAt: receivedAt, appState: state, outcome: .suppressed,
                                                  note: "\(path) · \(Self.describe(reason))"), at: 0)
-                trimLogs()
             }
+            trimLogs()
         }
     }
 
@@ -274,7 +536,76 @@ final class AppModel: ObservableObject {
 
     private func sayLifecycle(_ text: String) {
         guard !muted else { return }
-        speech.speak(text) { _ in }
+        speech.speak(text, cloud: false) { _ in }
+    }
+
+    // MARK: Reroute
+
+    /// Opens Google Maps with the reviewed detour. Called from the in-app button or the notification.
+    func reroute() {
+        guard let destination else {
+            lastError = "Set a destination (and detour) in Settings → Demo route first."
+            return
+        }
+        if !DetourService.open(destination: destination, via: detour) {
+            lastError = "Couldn't open Google Maps."
+        } else {
+            note("Opened Google Maps \(detour == nil ? "to destination" : "via reviewed detour")")
+        }
+    }
+
+    func navigate() {
+        guard let destination else { lastError = "Set a destination in Settings → Demo route first."; return }
+        _ = DetourService.open(destination: destination, via: nil)
+    }
+
+    func searchPlaces(_ query: String) async -> [SavedPlace] {
+        let near = lastFix.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        return await DetourService.search(query, near: near)
+    }
+
+    func useCurrentPositionAsDetour() {
+        guard let fix = lastFix else { lastError = "No GPS fix yet — start a drive outdoors first."; return }
+        detour = SavedPlace(name: "Detour point (here)", latitude: fix.latitude, longitude: fix.longitude)
+    }
+
+    // MARK: Demo road
+
+    func startRecordingRoad() {
+        guard phase == .active else { lastError = "Start a drive first, then record while driving the demo road."; return }
+        location.startRecordingRoad()
+        recordingRoad = true
+        recordedPoints = 0
+        note("Recording demo road")
+    }
+
+    func finishRecordingRoad(name: String) async {
+        let points = location.stopRecordingRoad()
+        recordingRoad = false
+        guard let convoyID = selectedConvoyID else { lastError = "Choose a convoy first."; return }
+        guard let corridor = RoadCorridor(id: "local", name: name, points: points) else {
+            lastError = "Too short — drive at least a few hundred feet while recording."
+            return
+        }
+        guard shareLocation else { lastError = "Turn on location sharing to save the road for your convoy."; return }
+        do {
+            try await backend.saveCorridor(convoyID: convoyID, name: name, points: points)
+            self.corridor = corridor
+            policy.corridor = corridor
+            note(String(format: "Saved demo road '%@' (%.1f km, %d points)", name, corridor.lengthMeters / 1000, points.count))
+        } catch {
+            lastError = "Couldn't save the road: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshCorridor(convoyID: String) async {
+        if let last = lastCorridorFetch, Date().timeIntervalSince(last) < 60, corridor != nil { return }
+        lastCorridorFetch = Date()
+        if let fetched = try? await backend.fetchCorridor(convoyID: convoyID), fetched != corridor {
+            corridor = fetched
+            policy.corridor = fetched
+            note(String(format: "Using demo road '%@' (%.1f km)", fetched.name, fetched.lengthMeters / 1000))
+        }
     }
 
     // MARK: Feed polling
@@ -282,12 +613,12 @@ final class AppModel: ObservableObject {
     private func startPolling() {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
-            var delay: UInt64 = 4
+            var delay: Double = 2
             while !Task.isCancelled {
                 guard let self else { return }
                 let ok = await self.pollOnce()
-                delay = ok ? 4 : min(delay * 2, 30)  // bounded backoff
-                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+                delay = ok ? 2 : min(delay * 2, 30)  // bounded backoff
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             }
         }
     }
@@ -302,12 +633,12 @@ final class AppModel: ObservableObject {
             setFeed(.offline)
             return false
         }
-        if case .live = feed {} else { if !wasLive { setFeed(.connecting) } }
+        if case .live = feed {} else if !wasLive { setFeed(.connecting) }
         do {
+            await refreshCorridor(convoyID: convoyID)
             let result = try await backend.fetchEvents(convoyID: convoyID, now: Date())
             guard phase == .active else { return true }
             setFeed(.live(lastSuccess: Date()))
-            if result.rejected > 0 { note("Ignored \(result.rejected) invalid or stale report(s)") }
             for event in result.events { handle(event, via: "feed") }
             return true
         } catch BackendClient.BackendError.signedOut {
@@ -354,13 +685,29 @@ final class AppModel: ObservableObject {
     func signIn(email: String, password: String) async {
         do {
             try await backend.signIn(email: email, password: password)
-            signedInEmail = backend.session?.email ?? email
-            lastError = nil
-            await loadConvoys()
+            await afterSignIn(fallbackEmail: email)
         } catch {
             lastError = error.localizedDescription
         }
         refreshFeedState()
+    }
+
+    func signUp(email: String, password: String) async {
+        do {
+            try await backend.signUp(email: email, password: password)
+            await afterSignIn(fallbackEmail: email)
+        } catch {
+            lastError = error.localizedDescription
+        }
+        refreshFeedState()
+    }
+
+    private func afterSignIn(fallbackEmail: String) async {
+        signedInEmail = backend.session?.email ?? fallbackEmail
+        lastError = nil
+        policy.ownUserID = backend.userID
+        await loadConvoys()
+        if shareLocation { try? await backend.setLocationConsent(true) }
     }
 
     func signOut() async {
@@ -382,6 +729,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func createConvoy(name: String) async {
+        do {
+            selectedConvoyID = try await backend.createConvoy(name: name)
+            await loadConvoys()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func joinConvoy(code: String) async {
         do {
             selectedConvoyID = try await backend.joinConvoy(code: code)
@@ -391,27 +747,30 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var selectedConvoy: BackendClient.Convoy? { convoys.first { $0.id == selectedConvoyID } }
+
     func setShareLocation(_ value: Bool) async {
         do {
             if backend.session != nil { try await backend.setLocationConsent(value) }
-            shareLocationWithReports = value
+            shareLocation = value
+            UserDefaults.standard.set(value, forKey: "shareLocation")
+            if !value { corridor = nil; policy.corridor = nil }
         } catch {
             lastError = "Couldn't update location sharing: \(error.localizedDescription)"
         }
     }
 
-    /// Reporting is for passengers or a stopped car. Location is attached only with consent
-    /// and only when this phone has a fresh, accurate fix.
-    func sendReport(kind: HazardKind) async -> Bool {
+    /// Hand-tapped report, for a passenger or a stopped car. Location only with consent and a fresh fix.
+    func sendReport(kind: HazardKind, side: HazardSide = .unknown, blocksRoad: Bool = false) async -> Bool {
         guard let convoyID = selectedConvoyID else { lastError = "Choose a convoy first."; return false }
         var attached: HazardLocation?
-        if shareLocationWithReports, let fix = lastFix, Date().timeIntervalSince(fix.timestamp) < 15, fix.accuracyMeters <= 50 {
-            let moving = (fix.speedMetersPerSecond ?? 0) >= 3
-            attached = HazardLocation(latitude: fix.latitude, longitude: fix.longitude, accuracyMeters: fix.accuracyMeters,
-                                      headingDegrees: moving ? fix.courseDegrees : nil)
+        if shareLocation, let fix = lastFix, Date().timeIntervalSince(fix.timestamp) < 15, fix.accuracyMeters <= 50 {
+            attached = HazardLocation(latitude: fix.latitude, longitude: fix.longitude, accuracyMeters: max(fix.accuracyMeters, 5),
+                                      headingDegrees: fix.courseDegrees)
         }
         do {
-            try await backend.report(kind: kind, convoyID: convoyID, clientEventID: UUID(), observedAt: Date(), location: attached)
+            try await backend.report(kind: kind, convoyID: convoyID, clientEventID: UUID(), observedAt: Date(),
+                                     location: attached, source: .convoyMember, side: side, blocksRoad: blocksRoad)
             note("Report sent · \(kind.rawValue) · location \(attached == nil ? "not attached" : "attached")")
             return true
         } catch {
@@ -419,11 +778,6 @@ final class AppModel: ObservableObject {
             return false
         }
     }
-
-    var isMoving: Bool { (lastFix?.speedMetersPerSecond ?? 0) >= 3 }
-    var backendConfigured: Bool { backend.isConfigured }
-    var isSignedIn: Bool { backend.session != nil }
-    var hazardEventsAvailable: Bool { backend.hazardEventsAvailable }
 
     // MARK: Diagnostics
 
@@ -446,10 +800,16 @@ final class AppModel: ObservableObject {
             "Build: \(config.versionDescription)",
             "Location access: \(locationAccess.rawValue) · notifications: \(notificationsAllowed ? "allowed" : "off")",
             "Feed: \(DriveStatusText.feedDetail(feed, now: Date()))",
+            "Voice: \(persona.rawValue) · cloud voices \(cloudVoices ? "on" : "off")",
+            "Demo road: \(corridor.map { String(format: "%@ %.1f km", $0.name, $0.lengthMeters / 1000) } ?? "none")",
         ]
         let latencies = spokenLatencies
         if let p50 = LatencyStats.percentile(latencies, 50), let p95 = LatencyStats.percentile(latencies, 95) {
             lines.append(String(format: "Receipt-to-speech: n=%d median %.2fs p95 %.2fs", latencies.count, p50, p95))
+        }
+        if let p50 = LatencyStats.percentile(detectorLatencies, 50), let p95 = LatencyStats.percentile(detectorLatencies, 95) {
+            lines.append(String(format: "Frame-to-detection (Gemini round trip): n=%d median %.2fs p95 %.2fs",
+                                detectorLatencies.count, p50, p95))
         }
         lines.append("")
         lines.append("Deliveries (newest first):")
@@ -471,7 +831,6 @@ final class AppModel: ObservableObject {
         case .background: state = "background"
         @unknown default: state = "unknown"
         }
-        // Protected data is unavailable while a passcode-locked phone is locked.
         return app.isProtectedDataAvailable ? state : state + ",locked"
     }
 
@@ -483,6 +842,16 @@ final class AppModel: ObservableObject {
         }
     }
 
+    static func describe(_ relevance: Relevance) -> String {
+        switch relevance {
+        case .unlocated: return "unlocated"
+        case .receiverUnknown(let why): return "receiver unknown (\(why))"
+        case .nearbyDirectionUnverified(let d): return String(format: "nearby %.0fm, direction unverified", d)
+        case .ahead(let d, let road): return String(format: "ahead %.0fm%@", d, road ? " on demo road" : " by heading")
+        case .notRelevant(let why): return "not relevant (\(why))"
+        }
+    }
+
     static func describe(_ reason: SuppressReason) -> String {
         switch reason {
         case .driveNotActive: return "drive not active"
@@ -491,8 +860,23 @@ final class AppModel: ObservableObject {
         case .similarRecentlyAnnounced: return "similar report already announced"
         case .ownReport: return "your own report"
         case .rejected(let why): return "rejected: \(why.rawValue)"
-        case .notRelevant(let why): return "not relevant: \(why)"
+        case .notRelevantYet(let why): return "waiting: \(why)"
         case .rateLimited: return "rate limited"
         }
     }
+
+    // MARK: Persistence helpers
+
+    private func save(_ place: SavedPlace?, _ key: String) {
+        UserDefaults.standard.set(place.flatMap { try? JSONEncoder().encode($0) }, forKey: key)
+    }
+
+    private static func load(_ key: String) -> SavedPlace? {
+        UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(SavedPlace.self, from: $0) }
+    }
+}
+
+/// Wraps the capture session for the SwiftUI preview layer.
+struct AVCaptureSessionProvider {
+    let session: AVCaptureSession
 }

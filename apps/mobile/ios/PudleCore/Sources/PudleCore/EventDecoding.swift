@@ -21,8 +21,9 @@ public enum EventRejection: String, Error, Equatable, Sendable {
 public struct EventLimits: Sendable {
     public var maxClockSkew: TimeInterval = 30
     /// Legacy convoy reports live 2 minutes on the server.
-    public var maxAge: TimeInterval = 10 * 60
-    public var maxLifetime: TimeInterval = 15 * 60
+    /// Blockage reports live 30 minutes on the server; nothing may be spoken after an hour.
+    public var maxAge: TimeInterval = 60 * 60
+    public var maxLifetime: TimeInterval = 60 * 60
     public init() {}
 }
 
@@ -80,6 +81,18 @@ public struct HazardEventRow: Decodable, Sendable {
     public var longitude: Double?
     public var accuracy_m: Double?
     public var heading_deg: Double?
+    public var side: String?
+    public var blocks_road: Bool?
+
+    public init(id: String, schema_version: Int, convoy_id: String, reporter_id: String, kind: String, source: String,
+                observed_at: String, created_at: String, expires_at: String, latitude: Double? = nil,
+                longitude: Double? = nil, accuracy_m: Double? = nil, heading_deg: Double? = nil,
+                side: String? = nil, blocks_road: Bool? = nil) {
+        self.id = id; self.schema_version = schema_version; self.convoy_id = convoy_id; self.reporter_id = reporter_id
+        self.kind = kind; self.source = source; self.observed_at = observed_at; self.created_at = created_at
+        self.expires_at = expires_at; self.latitude = latitude; self.longitude = longitude; self.accuracy_m = accuracy_m
+        self.heading_deg = heading_deg; self.side = side; self.blocks_road = blocks_road
+    }
 }
 
 public enum EventDecoder {
@@ -102,7 +115,15 @@ public enum EventDecoder {
         guard row.schema_version == HazardEvent.currentSchemaVersion else { return .failure(.unsupportedSchema) }
         if let expected = expectedConvoy, expected != row.convoy_id { return .failure(.wrongConvoy) }
         guard let kind = HazardKind(rawValue: row.kind) else { return .failure(.unknownKind) }
-        guard let source = HazardSource(rawValue: row.source) else { return .failure(.unknownSource) }
+        // The server never issues labeled tests; refuse a row that claims to be one.
+        guard let source = HazardSource(rawValue: row.source), source != .labeledTest else { return .failure(.unknownSource) }
+        let side: HazardSide
+        if let rawSide = row.side {
+            guard let parsed = HazardSide(rawValue: rawSide) else { return .failure(.malformed) }
+            side = parsed
+        } else {
+            side = .unknown
+        }
         guard let observed = PudleTime.parse(row.observed_at), let created = PudleTime.parse(row.created_at),
               let expires = PudleTime.parse(row.expires_at) else { return .failure(.badTimestamp) }
         var location: HazardLocation?
@@ -118,7 +139,9 @@ public enum EventDecoder {
             return .failure(.invalidLocation)
         }
         guard observed <= created.addingTimeInterval(limits.maxClockSkew) else { return .failure(.badTimestamp) }
-        let event = HazardEvent(id: row.id, kind: kind, source: source, convoyID: row.convoy_id, reporterID: row.reporter_id,
+        if source == .driverConfirmedCamera && location == nil { return .failure(.invalidLocation) }
+        let event = HazardEvent(id: row.id, kind: kind, source: source, side: side, blocksRoad: row.blocks_road ?? false,
+                                convoyID: row.convoy_id, reporterID: row.reporter_id,
                                 observedAt: observed, createdAt: created, expiresAt: expires, location: location)
         return checkTimes(event, now: now, limits: limits)
     }

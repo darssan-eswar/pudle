@@ -111,7 +111,7 @@ create table public.road_corridors (
 create index road_corridors_convoy_idx on public.road_corridors(convoy_id, created_at desc);
 alter table public.road_corridors enable row level security;
 revoke all on public.road_corridors from anon, authenticated;
-grant select, delete on public.road_corridors to authenticated;
+grant select on public.road_corridors to authenticated;
 
 create policy "Members can read corridors of their active convoy"
   on public.road_corridors for select to authenticated
@@ -124,10 +124,6 @@ create policy "Members can read corridors of their active convoy"
         and c.expires_at > now()
     )
   );
-
-create policy "Creators can delete their corridors"
-  on public.road_corridors for delete to authenticated
-  using (created_by = (select auth.uid()));
 
 -- 4. Functions ----------------------------------------------------------------------------
 
@@ -257,57 +253,26 @@ begin
     update public.hazard_events
       set latitude = null, longitude = null, accuracy_m = null, heading_deg = null
       where reporter_id = v_user and latitude is not null;
-    delete from public.road_corridors where created_by = v_user;
+    -- Corridors expire immediately (invisible through RLS); retention cleanup removes them.
+    update public.road_corridors
+      set expires_at = now(), points = '[[0,0],[0,0]]'::jsonb
+      where created_by = v_user and expires_at > now();
   end if;
 end;
 $$;
 
 -- Lets a member leave; reading access ends immediately because policies check membership live.
-create function public.leave_convoy(p_convoy_id uuid)
-returns void
-language plpgsql security definer set search_path = ''
-as $$
-begin
-  if auth.uid() is null then raise exception 'Authentication required' using errcode = '42501'; end if;
-  delete from public.convoy_members where convoy_id = p_convoy_id and user_id = auth.uid();
-end;
-$$;
-
--- Physical retention cleanup. Expired rows are already invisible through RLS; this deletes them.
--- Not callable by app users. Schedule it (for example with pg_cron) only after owner approval:
---   select cron.schedule('pudle-purge', '*/15 * * * *', $$select public.purge_expired_hazard_data()$$);
-create function public.purge_expired_hazard_data(p_grace interval default interval '1 hour')
-returns table (hazard_events_deleted bigint, obstacle_reports_deleted bigint, convoys_deleted bigint)
-language plpgsql security definer set search_path = ''
-as $$
-declare
-  v_hazards bigint;
-  v_reports bigint;
-  v_convoys bigint;
-begin
-  if p_grace < interval '0' or p_grace > interval '24 hours' then
-    raise exception 'Grace period must be between 0 and 24 hours';
-  end if;
-  delete from public.hazard_events where expires_at < now() - p_grace;
-  get diagnostics v_hazards = row_count;
-  delete from public.obstacle_reports where expires_at < now() - p_grace;
-  get diagnostics v_reports = row_count;
-  -- Convoys expire after 24 hours; keep a 7-day window so an owner can see recent history.
-  delete from public.road_corridors where expires_at < now();
-  delete from public.convoys where expires_at < now() - interval '7 days';
-  get diagnostics v_convoys = row_count;
-  return query select v_hazards, v_reports, v_convoys;
-end;
-$$;
-
 revoke all on function public.report_hazard(uuid, text, uuid, timestamptz, double precision, double precision, real, real, text, text, boolean) from public, anon;
 revoke all on function public.set_location_consent(boolean, text) from public, anon;
 revoke all on function public.save_corridor(uuid, text, jsonb) from public, anon;
-revoke all on function public.leave_convoy(uuid) from public, anon;
-revoke all on function public.purge_expired_hazard_data(interval) from public, anon, authenticated;
 grant execute on function public.report_hazard(uuid, text, uuid, timestamptz, double precision, double precision, real, real, text, text, boolean) to authenticated;
 grant execute on function public.set_location_consent(boolean, text) to authenticated;
 grant execute on function public.save_corridor(uuid, text, jsonb) to authenticated;
-grant execute on function public.leave_convoy(uuid) to authenticated;
 
 alter publication supabase_realtime add table public.hazard_events;
+
+-- Supabase grants EXECUTE to PUBLIC by default; restrict to signed-in users.
+revoke execute on function public.report_hazard(uuid, text, uuid, timestamptz, double precision, double precision, real, real, text, text, boolean) from public;
+revoke execute on function public.save_corridor(uuid, text, jsonb) from public;
+revoke execute on function public.set_location_consent(boolean, text) from public;
+revoke execute on function public.limit_obstacle_reports() from public, anon, authenticated;
