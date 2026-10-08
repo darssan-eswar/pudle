@@ -66,6 +66,13 @@ public struct AlertPolicy: Sendable {
                                                corridor: corridor, rules: rules)
         if case .notRelevant(let why) = relevance { return .suppress(.notRelevantYet(why)) }
 
+        if event.source == .driverConfirmedCamera, event.location != nil {
+            switch relevance {
+            case .receiverUnknown, .nearbyDirectionUnverified: return .suppress(.notRelevantYet("waiting for reliable direction"))
+            default: break
+            }
+        }
+
         if isSimilarToRecent(event, now: now) {
             consume(event)
             return .suppress(.similarRecentlyAnnounced)
@@ -148,10 +155,8 @@ public struct DetectionFilter: Sendable {
         if observation.confidence >= singleFrameConfidence || agreeing.count >= 2 {
             lastAcceptedAt = now
             recent.removeAll()
-            // Prefer the most confident frame's side; blockage if any frame said so.
-            let best = agreeing.max { $0.confidence < $1.confidence } ?? observation
-            return Observation(kind: best.kind, side: best.side, blocksRoad: agreeing.contains { $0.blocksRoad },
-                               confidence: best.confidence, at: best.at)
+            // The latest frame matches the position/time captured by the caller.
+            return observation
         }
         return nil
     }

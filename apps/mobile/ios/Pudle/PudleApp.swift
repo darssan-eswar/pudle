@@ -9,6 +9,10 @@ struct PudleApp: App {
         WindowGroup {
             DriveView()
                 .environmentObject(model)
+                .tint(PudleTheme.purple)
+                .fontDesign(.rounded)
+                .preferredColorScheme(.light)
+                .groupBoxStyle(PudleCardStyle())
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {

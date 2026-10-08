@@ -10,13 +10,35 @@ struct DriveView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 18) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "waveform")
+                            .font(.title2.bold())
+                            .foregroundStyle(PudleTheme.purple)
+                            .frame(width: 52, height: 52)
+                            .background(PudleTheme.lilac, in: RoundedRectangle(cornerRadius: 18))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Your road companion").font(.title2.bold())
+                            Text("A little heads-up for the road ahead.")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     StatusCard(line: DriveStatusText.headline(model.snapshot))
                     if let blockage = model.activeBlockage { BlockageCard(event: blockage) }
                     primaryControls
+                    GroupBox {
+                        Toggle("Demo mode", isOn: $model.demoDelivery)
+                    } label: {
+                        Label("Convoy alerts", systemImage: "iphone.gen3.radiowaves.left.and.right")
+                    }
                     DashcamCard()
                     if model.phase == .active { CapabilityList() }
-                    testControls
+                    DisclosureGroup("Developer tests (synthetic)") { testControls }
+                        .font(.footnote)
+                        .padding(16)
+                        .background(PudleTheme.paper, in: RoundedRectangle(cornerRadius: 20))
                     if model.phase == .active || model.isSignedIn {
                         Button {
                             showReport = true
@@ -50,12 +72,18 @@ struct DriveView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Pudle")
+            .background(PudleTheme.ivory)
+            .navigationTitle("pudle")
+            .toolbarBackground(PudleTheme.ivory, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                         .accessibilityLabel("Settings")
                 }
+            }
+            .sheet(item: $model.incomingHazard) { report in
+                ReceivedHazardView(report: report)
             }
             .sheet(isPresented: $showReport) { ReportView() }
             .sheet(isPresented: $showSettings) { SettingsView() }
@@ -78,7 +106,7 @@ struct DriveView: View {
                         .frame(maxWidth: .infinity, minHeight: 64)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.green)
+                .tint(PudleTheme.purple)
             } else {
                 HStack(spacing: 12) {
                     Button {
@@ -97,7 +125,7 @@ struct DriveView: View {
                             .frame(maxWidth: .infinity, minHeight: 64)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .tint(PudleTheme.danger)
                 }
             }
         }
@@ -140,7 +168,7 @@ struct DashcamCard: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
-                Toggle("Dashcam hazard spotting", isOn: Binding(get: { model.dashcamEnabled }, set: { model.setDashcam($0) }))
+                Toggle("Spot hazards with the camera", isOn: Binding(get: { model.dashcamEnabled }, set: { model.setDashcam($0) }))
                     .disabled(!model.isSignedIn)
                 if model.cameraRunning {
                     CameraPreview(session: model.cameraSession.session)
@@ -155,14 +183,34 @@ struct DashcamCard: View {
                                 .padding(8)
                         }
                 }
+                Toggle("Natural Gemini voice", isOn: $model.cloudVoices)
+                HStack {
+                    Button("What do you see?") { model.describeScene() }.buttonStyle(.bordered)
+                    Button("Talk to Pudle") { model.listenToCompanion() }.buttonStyle(.bordered)
+                }.disabled(!model.cameraRunning || model.companionBusy)
+                if !model.companionMessage.isEmpty { Text(model.companionMessage).font(.footnote) }
+                if !model.companionVoiceStatus.isEmpty { Text(model.companionVoiceStatus).font(.caption).foregroundStyle(.secondary) }
+                DisclosureGroup("Camera check speed") {
+                    Toggle("Faster demo checks (every 3 seconds)", isOn: $model.fastDemoChecks)
+                        .disabled(!model.cameraRunning)
+                    Text("Faster checks may exceed your free Gemini quota.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.font(.footnote)
+                Button("Check now") { model.checkCameraNow() }
+                    .disabled(!model.cameraRunning || model.cameraPrompt != nil)
+                if model.cameraRunning {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text("Next check in \(max(0, Int(model.nextCameraCheck.timeIntervalSince(context.date).rounded(.up))))s").font(.caption)
+                    }
+                }
                 if let prompt = model.cameraPrompt { PromptCard(prompt: prompt) }
                 Text(model.dashcamEnabled ? model.detectorStatus
-                     : "Mount the phone facing the road. Pudle checks about one frame per second with Gemini and asks you before sharing anything. Keep Pudle on screen: iOS pauses the camera otherwise.")
+                     : "Mount the phone facing the road. Every 15 seconds a camera frame is sent to Gemini for analysis. Only confirmed reports go to your convoy. Keep Pudle on screen; camera capture requires foreground.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         } label: {
-            Label("Dashcam", systemImage: "camera.viewfinder")
+            Label("Eyes on the road", systemImage: "camera.viewfinder")
         }
     }
 }
@@ -184,6 +232,8 @@ struct PromptCard: View {
             case .done(let message): Text(message).font(.callout.bold())
             }
             if !prompt.transcript.isEmpty { Text("Heard: “\(prompt.transcript)”").font(.caption).foregroundStyle(.secondary) }
+            Text("Saying or tapping Report it shares this hazard’s GPS position with your convoy. Routine GPS stays on your phone.")
+                .font(.caption).foregroundStyle(.secondary)
             if prompt.phase != .sending {
                 HStack {
                     Button("Report it") { model.confirmCameraReport() }.buttonStyle(.borderedProminent)
@@ -193,7 +243,7 @@ struct PromptCard: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.2), in: RoundedRectangle(cornerRadius: 12))
+        .background(PudleTheme.peach, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -210,7 +260,7 @@ struct BlockageCard: View {
             Button {
                 model.reroute()
             } label: {
-                Label(model.detour == nil ? "Open Google Maps" : "Reroute via detour in Google Maps", systemImage: "arrow.triangle.branch")
+                Label(model.detour == nil ? "Set a reviewed detour in Settings" : "Reroute via detour in Google Maps", systemImage: "arrow.triangle.branch")
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.borderedProminent)
@@ -218,7 +268,7 @@ struct BlockageCard: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
+        .background(PudleTheme.peach, in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
@@ -248,22 +298,39 @@ struct StatusCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(line.title).font(.title3.bold())
+            Label(line.title, systemImage: icon).font(.title3.bold())
             Text(line.detail).font(.body)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(color.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(color, lineWidth: 2))
+        .background(fill, in: RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(color.opacity(0.3)))
         .accessibilityElement(children: .combine)
+    }
+
+    private var icon: String {
+        switch line.tone {
+        case .good: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.circle.fill"
+        case .problem: return "exclamationmark.triangle.fill"
+        case .neutral: return "car.side.fill"
+        }
+    }
+
+    private var fill: Color {
+        switch line.tone {
+        case .good: return PudleTheme.mint
+        case .warning, .problem: return PudleTheme.peach
+        case .neutral: return PudleTheme.lilac.opacity(0.55)
+        }
     }
 
     private var color: Color {
         switch line.tone {
-        case .good: return .green
+        case .good: return PudleTheme.green
         case .warning: return .orange
         case .problem: return .red
-        case .neutral: return .gray
+        case .neutral: return PudleTheme.purple
         }
     }
 }
@@ -293,7 +360,11 @@ struct CapabilityList: View {
 
     private var locationText: String {
         switch model.locationAccess {
-        case .whenInUse, .always: return model.snapshot.backgroundLocationRunning ? "On for this drive" : "Allowed, not running"
+        case .whenInUse, .always:
+            guard model.snapshot.backgroundLocationRunning else { return "Allowed, not running" }
+            guard let fix = model.lastFix else { return "Waiting for GPS — try outdoors" }
+            guard Date().timeIntervalSince(fix.timestamp) <= 15 else { return "GPS stale — waiting for update" }
+            return fix.accuracyMeters <= 40 ? String(format: "GPS ready · ±%.0f m", fix.accuracyMeters) : String(format: "Weak GPS · ±%.0f m — try outdoors", fix.accuracyMeters)
         case .notDetermined: return "Not yet allowed"
         case .denied: return "Denied — change in Settings"
         case .restricted: return "Restricted on this device"
@@ -308,5 +379,36 @@ struct CapabilityList: View {
             Spacer()
             Text(value).multilineTextAlignment(.trailing).foregroundStyle(.secondary)
         }
+    }
+}
+
+struct ReceivedHazardView: View {
+    @EnvironmentObject private var model: AppModel
+    let report: IncomingHazard
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Label("FROM YOUR CONVOY", systemImage: "car.2.fill")
+                .font(.caption.bold()).foregroundStyle(PudleTheme.purple)
+            Label(report.title, systemImage: "exclamationmark.triangle.fill")
+                .font(.title2.bold()).foregroundStyle(PudleTheme.danger)
+            Text(report.message).font(.title3)
+            if report.blocksRoad, model.detour != nil {
+                Button("Open reviewed detour in Google Maps") {
+                    model.incomingHazard = nil
+                    model.reroute()
+                }.buttonStyle(.borderedProminent).controlSize(.large)
+            }
+            Button {
+                model.incomingHazard = nil
+            } label: {
+                Text("Got it").font(.headline).frame(maxWidth: .infinity, minHeight: 44)
+            }.buttonStyle(.borderedProminent).controlSize(.large)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(PudleTheme.ivory)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }

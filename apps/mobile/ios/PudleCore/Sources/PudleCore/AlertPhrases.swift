@@ -157,7 +157,7 @@ public enum AlertPhrases {
     }
 
     public static func reportSent(blocksRoad: Bool) -> String {
-        blocksRoad ? "Done. I warned drivers behind you about a possible blockage." : "Done. I warned drivers behind you."
+        "Report sent to your convoy."
     }
     public static let reportCancelled = "Okay, not reporting it."
     public static let reportFailed = "Sorry, I couldn't send that report. Check the connection."
@@ -182,11 +182,25 @@ public enum VoiceIntent: Equatable, Sendable {
         let text = " " + words.joined(separator: " ") + " "
         // Negatives first: "don't report it" must not count as "report it".
         let negatives = [" no ", " nope ", " nah ", " cancel ", " don t ", " dont ", " do not ", " never mind ", " nevermind ",
-                         " stop ", " ignore ", " skip "]
+                         " stop ", " ignore ", " skip ", " not "]
         if negatives.contains(where: { text.contains($0) }) { return .cancel }
-        let positives = [" yes ", " yeah ", " yep ", " yup ", " sure ", " report ", " go ahead ", " do it ", " send ",
-                         " warn ", " ok ", " okay ", " please ", " affirmative "]
+        if [" should ", " maybe ", " can ", " could ", " would "].contains(where: { text.contains($0) }) { return .unknown }
+        let positives = [" yes ", " yeah ", " yep ", " yup ", " sure ", " report it ", " go ahead ", " do it ", " send it ",
+                         " warn them ", " ok ", " okay ", " affirmative "]
         if positives.contains(where: { text.contains($0) }) { return .confirm }
         return .unknown
+    }
+}
+
+/// Short, explicitly started voice sessions; no always-listening wake word.
+public enum CompanionCommand: Equatable, Sendable {
+    case describe, report, cancel, unknown
+    public static func parse(_ transcript: String) -> CompanionCommand {
+        let intent = VoiceIntent.parse(transcript)
+        if intent == .cancel { return .cancel }
+        let words = transcript.lowercased().components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty }
+        let text = words.joined(separator: " ")
+        if ["what do you see", "what can you see", "what is in front", "what s in front", "describe the scene"].contains(where: { text.contains($0) }) { return .describe }
+        return intent == .confirm ? .report : .unknown
     }
 }

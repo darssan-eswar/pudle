@@ -47,6 +47,8 @@ struct ReportView: View {
                          : "No location is attached. Receivers will hear “location not verified”. You can opt in under Settings.")
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(PudleTheme.ivory)
             .navigationTitle("Report a hazard")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
@@ -89,6 +91,8 @@ struct SettingsView: View {
                     LabeledContent("Version", value: model.config.versionDescription)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(PudleTheme.ivory)
             .navigationTitle("Settings")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task { if model.isSignedIn { await model.loadConvoys() } }
@@ -112,11 +116,21 @@ struct SettingsView: View {
                 SecureField("Password (8+ characters)", text: $password)
                     .textContentType(.password)
                 HStack {
-                    Button("Sign in") { Task { await model.signIn(email: email, password: password); password = "" } }
+                    Button("Sign in") {
+                        let accountEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let accountPassword = password
+                        Task { await model.signIn(email: accountEmail, password: accountPassword) }
+                    }.buttonStyle(.bordered)
                     Spacer()
-                    Button("Create account") { Task { await model.signUp(email: email, password: password); password = "" } }
+                    Button("Create account") {
+                        let accountEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let accountPassword = password
+                        Task { await model.signUp(email: accountEmail, password: accountPassword) }
+                    }.buttonStyle(.bordered)
                 }
-                .disabled(email.isEmpty || password.count < 8)
+                .disabled(model.accountBusy || email.isEmpty || password.count < 8)
+                if model.accountBusy { ProgressView("Connecting…") }
+                Text("Create a Pudle account with a new password. Confirm the email before signing in; your Google account password is not used here.").font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -159,7 +173,7 @@ struct SettingsView: View {
         } header: {
             Text("Location sharing")
         } footer: {
-            Text("Needed for camera reports and the demo road. Only the single position of a hazard you confirm is shared, and it is deleted with the report (15–30 minutes, plus cleanup). Your own movement is never uploaded. Turning this off removes positions from your stored reports.")
+            Text("Needed for camera reports and the demo road. Confirmed hazard positions and the demo road you explicitly record are shared with your convoy. Reports expire after 15–30 minutes; expiry does not guarantee immediate deletion. Routine positions remain on this phone. Turning this off removes positions from your stored reports.")
         }
     }
 
@@ -250,7 +264,9 @@ struct DiagnosticsView: View {
                 }
             }
         }
-        .navigationTitle("Evidence")
+        .scrollContentBackground(.hidden)
+            .background(PudleTheme.ivory)
+            .navigationTitle("Evidence")
     }
 }
 
@@ -258,8 +274,8 @@ struct LimitationsView: View {
     var body: some View {
         List {
             Section("What works") {
-                Text("Spoken reports while Google Maps or another app is in front, during a drive you started, while iOS keeps delivering Pudle's location (blue indicator visible).")
-                Text("Dashcam mode: Gemini checks about one frame per second; Pudle asks before sharing, and you answer by voice or tap.")
+                Text("Designed to speak reports while another app is in front during an active drive. Requires iOS location updates and network availability; verify on your phones before recording.")
+                Text("Dashcam mode sends a frame to Gemini every 15 seconds. Free-tier provider data policies apply. Pudle asks before sending a hazard report to your convoy; answer by voice or tap.")
                 Text("Mute, Stop drive and Reroute from the notification (long-press it) or inside Pudle.")
             }
             Section("What Pudle does not do") {
@@ -276,6 +292,8 @@ struct LimitationsView: View {
                 Text("During a phone call, iOS may block spoken audio. Pudle then shows a notification instead.")
             }
         }
-        .navigationTitle("Limitations")
+        .scrollContentBackground(.hidden)
+            .background(PudleTheme.ivory)
+            .navigationTitle("Limitations")
     }
 }

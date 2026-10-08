@@ -46,3 +46,8 @@ apps/mobile/ios/Config/Local.xcconfig
 apps/mobile/ios/Pudle.xcodeproj/
 apps/mobile/ios/PudleCore/.build/
 apps/mobile/ios/PudleCore/.swiftpm/
+
+apps/mobile/ios/Pudle/Info.plist
+
+# Supabase CLI local cache
+supabase/.temp/

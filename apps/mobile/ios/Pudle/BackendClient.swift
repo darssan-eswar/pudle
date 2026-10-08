@@ -29,6 +29,7 @@ final class BackendClient {
         let confidence: Double
         let label: String
         let latency_ms: Int?
+        let description: String?
     }
 
     enum BackendError: LocalizedError {
@@ -48,6 +49,7 @@ final class BackendClient {
     private let config: AppConfig
     private let urlSession: URLSession
     private(set) var session: Session?
+    private var refreshTask: Task<Void, Error>?
 
     init(config: AppConfig) {
         self.config = config
@@ -92,6 +94,14 @@ final class BackendClient {
     private func refreshIfNeeded() async throws {
         guard let current = session else { throw BackendError.signedOut }
         guard current.expiresAt.timeIntervalSinceNow < 60 else { return }
+        if let refreshTask { return try await refreshTask.value }
+        let task = Task { @MainActor in try await self.refreshSession(current) }
+        refreshTask = task
+        defer { refreshTask = nil }
+        try await task.value
+    }
+
+    private func refreshSession(_ current: Session) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["refresh_token": current.refreshToken])
         do {
             let data = try await send(path: "auth/v1/token", query: [URLQueryItem(name: "grant_type", value: "refresh_token")],
@@ -159,7 +169,8 @@ final class BackendClient {
             .init(name: "order", value: "created_at.desc"),
             .init(name: "limit", value: "25"),
         ])
-        for row in (try? JSONDecoder().decode([LegacyObstacleRow].self, from: legacyData)) ?? [] {
+        guard let legacyRows = try? JSONDecoder().decode([LegacyObstacleRow].self, from: legacyData) else { throw BackendError.decoding }
+        for row in legacyRows {
             switch EventDecoder.validate(row, expectedConvoy: convoyID, now: now) {
             case .success(let event): events.append(event)
             case .failure: rejected += 1
@@ -171,7 +182,8 @@ final class BackendClient {
             .init(name: "order", value: "created_at.desc"),
             .init(name: "limit", value: "50"),
         ])
-        for row in (try? JSONDecoder().decode([HazardEventRow].self, from: data)) ?? [] {
+        guard let hazardRows = try? JSONDecoder().decode([HazardEventRow].self, from: data) else { throw BackendError.decoding }
+        for row in hazardRows {
             switch EventDecoder.validate(row, expectedConvoy: convoyID, now: now) {
             case .success(let event): events.append(event)
             case .failure: rejected += 1
@@ -227,10 +239,10 @@ final class BackendClient {
 
     // MARK: Gemini edge functions
 
-    func detectHazard(jpeg: Data) async throws -> Detection {
-        let body = try JSONSerialization.data(withJSONObject: ["image": jpeg.base64EncodedString()])
+    func detectHazard(jpeg: Data, describe: Bool = false) async throws -> Detection {
+        let body = try JSONSerialization.data(withJSONObject: ["image": jpeg.base64EncodedString(), "mode": describe ? "describe" : "hazard"])
         try await refreshIfNeeded()
-        let data = try await send(path: "functions/v1/detect-hazard", method: "POST", body: body, timeout: 10)
+        let data = try await send(path: "functions/v1/detect-hazard", method: "POST", body: body, timeout: 20)
         guard let result = try? JSONDecoder().decode(Detection.self, from: data) else { throw BackendError.decoding }
         return result
     }

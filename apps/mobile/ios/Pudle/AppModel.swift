@@ -14,6 +14,7 @@ struct DiagnosticLine: Identifiable {
 
 /// The dashcam's current question to the driver.
 struct CameraPrompt: Equatable {
+    let id = UUID()
     enum Phase: Equatable { case asking, listening, sending, done(String) }
     var kind: HazardKind
     var side: HazardSide
@@ -25,6 +26,13 @@ struct CameraPrompt: Equatable {
     var location: HazardLocation?
     var phase: Phase
     var transcript: String = ""
+}
+
+struct IncomingHazard: Identifiable {
+    let id: String
+    let title: String
+    let message: String
+    let blocksRoad: Bool
 }
 
 /// Orchestrates one driving session: location, feed polling, alert policy, speech and dashcam.
@@ -49,6 +57,15 @@ final class AppModel: ObservableObject {
     // Dashcam
     @Published var dashcamEnabled = false
     @Published private(set) var cameraRunning = false
+    @Published private(set) var companionBusy = false
+    @Published private(set) var companionMessage = ""
+    @Published private(set) var companionVoiceStatus = ""
+    private func companionSpoken(_ outcome: SpeechService.Outcome) {
+        if case .started(_, let voice) = outcome {
+            companionVoiceStatus = voice.hasPrefix("gemini:") ? "Speaking with Gemini voice" : (cloudVoices ? "Using iPhone fallback — Gemini audio unavailable" : "Using iPhone voice")
+        }
+    }
+    private var companionTask: Task<Void, Never>?
     @Published private(set) var cameraPrompt: CameraPrompt?
     @Published private(set) var detectorStatus = "Off"
     @Published private(set) var lastDetection: String = ""
@@ -59,6 +76,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var recordingRoad = false
     @Published private(set) var recordedPoints = 0
     @Published private(set) var activeBlockage: HazardEvent?
+    @Published var incomingHazard: IncomingHazard?
     @Published var destination: SavedPlace? { didSet { save(destination, "destination") } }
     @Published var detour: SavedPlace? { didSet { save(detour, "detour") } }
 
@@ -70,7 +88,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var signedInEmail: String?
     @Published private(set) var convoys: [BackendClient.Convoy] = []
     @Published var selectedConvoyID: String? {
-        didSet { UserDefaults.standard.set(selectedConvoyID, forKey: "convoyID"); corridor = nil; refreshFeedState() }
+        didSet { UserDefaults.standard.set(selectedConvoyID, forKey: "convoyID"); corridor = nil; policy.corridor = nil; cancelCameraReport(); refreshFeedState() }
     }
     @Published var units: DistanceUnits {
         didSet { UserDefaults.standard.set(units.rawValue, forKey: "units"); policy.units = units }
@@ -82,6 +100,7 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(cloudVoices, forKey: "cloudVoices"); speech.useCloudVoice = cloudVoices }
     }
     @Published private(set) var shareLocation: Bool
+    @Published private(set) var accountBusy = false
     @Published var lastError: String?
 
     let config = AppConfig.current
@@ -92,8 +111,18 @@ final class AppModel: ObservableObject {
     private lazy var backend = BackendClient(config: config)
     private var policy = AlertPolicy()
     private var filter = DetectionFilter()
+    private var polling = false
+    private var lastPollStarted = Date.distantPast
     private var pollTask: Task<Void, Never>?
     private var testTask: Task<Void, Never>?
+    @Published var demoDelivery = UserDefaults.standard.object(forKey: "demoDelivery") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(demoDelivery, forKey: "demoDelivery") }
+    }
+    private var demoDelivered: Set<String> = []
+    @Published var fastDemoChecks = false
+    @Published private(set) var nextCameraCheck = Date()
+    private var checkNowRequested = false
+    func checkCameraNow() { checkNowRequested = true }
     private var detectTask: Task<Void, Never>?
     private let pathMonitor = NWPathMonitor()
     private var batteryAtStart: Float?
@@ -118,13 +147,16 @@ final class AppModel: ObservableObject {
         speech.useCloudVoice = cloudVoices
         speech.cloudVoice = { [weak self] text, persona in
             guard let self else { throw CancellationError() }
-            return try await self.backend.synthesize(text: text, persona: persona, timeout: 4)
+            return try await self.backend.synthesize(text: text, persona: persona, timeout: 12)
         }
 
         location.onAccessChange = { [weak self] access in self?.locationAccessChanged(access) }
         location.onFix = { [weak self] fix in
             guard let self else { return }
             self.lastFix = fix
+            if self.phase == .active, Date().timeIntervalSince(self.lastPollStarted) >= 2, !self.polling {
+                Task { [weak self] in _ = await self?.pollOnce() }
+            }
             if self.recordingRoad { self.recordedPoints = self.location.recordedRoad.count }
         }
         location.onError = { [weak self] message in self?.note(message) }
@@ -210,6 +242,7 @@ final class AppModel: ObservableObject {
         stopDashcam()
         if recordingRoad { _ = location.stopRecordingRoad(); recordingRoad = false }
         location.stop()
+        incomingHazard = nil
         lastFix = nil  // travel history is never kept
         activeBlockage = nil
         notifications.clearAll()
@@ -285,13 +318,16 @@ final class AppModel: ObservableObject {
             camera.start()
             cameraRunning = true
             detectorStatus = "Watching the road"
-            note("Dashcam on (frames go to Gemini, nothing is stored)")
+            note("Dashcam on (frames go to Gemini, no local image recording)")
             detectTask?.cancel()
             detectTask = Task { [weak self] in await self?.detectionLoop() }
         }
     }
 
     private func stopDashcam() {
+        companionTask?.cancel()
+        speech.cancelListening()
+        companionBusy = false
         detectTask?.cancel(); detectTask = nil
         camera.stop()
         cameraRunning = false
@@ -299,17 +335,71 @@ final class AppModel: ObservableObject {
         detectorStatus = "Off"
     }
 
+    func describeScene() {
+        guard phase == .active, cameraRunning, !companionBusy, cameraPrompt == nil,
+              let (jpeg, capturedAt) = camera.snapshotJPEG(orientation: UIDevice.current.orientation) else {
+            companionMessage = "Start a drive and enable Dashcam first; finish any pending report."
+            return
+        }
+        let fix = lastFix
+        companionBusy = true
+        companionMessage = "Looking at a fresh frame…"
+        companionTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.companionBusy = false }
+            do {
+                let result = try await self.backend.detectHazard(jpeg: jpeg, describe: true)
+                guard !Task.isCancelled, self.phase == .active, self.cameraRunning, UIApplication.shared.applicationState == .active else { return }
+                let description = result.description ?? "I couldn't describe this frame."
+                self.companionMessage = description
+                if result.hazard, let kind = HazardKind(rawValue: result.kind), result.confidence >= 0.55 {
+                    self.askDriver(about: .init(kind: kind, side: HazardSide(rawValue: result.side) ?? .unknown,
+                                              blocksRoad: result.blocks_road, confidence: result.confidence, at: capturedAt),
+                                   label: result.label, capturedAt: capturedAt, fix: fix, description: description)
+                } else if !self.muted {
+                    self.speech.speak(description) { [weak self] outcome in self?.companionSpoken(outcome) }
+                }
+            } catch {
+                guard !Task.isCancelled, self.phase == .active else { return }
+                self.companionMessage = "Scene check unavailable: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func listenToCompanion() {
+        guard phase == .active, cameraRunning, !companionBusy else { return }
+        Task {
+            guard await SpeechService.requestListeningPermission(), phase == .active else { return }
+            companionBusy = true
+            let promptID = cameraPrompt?.id
+            companionMessage = "Listening: say What do you see, Report it, or Cancel."
+            speech.listen(seconds: 7) { [weak self] intent, transcript in
+                guard let self, self.phase == .active, self.cameraRunning else { return }
+                self.companionBusy = false
+                switch CompanionCommand.parse(transcript) {
+                case .cancel: self.cancelCameraReport(spoken: true)
+                case .describe: self.describeScene()
+                case .report:
+                    if self.cameraPrompt != nil, self.cameraPrompt?.id == promptID { self.confirmCameraReport() }
+                    else { self.companionMessage = "There is no pending detected hazard to report." }
+                case .unknown: self.companionMessage = "No command matched. Say What do you see, Report it, or Cancel."
+                }
+            }
+        }
+    }
+
     private func detectionLoop() async {
         var consecutiveErrors = 0
         while !Task.isCancelled, phase == .active, cameraRunning {
             let cycleStart = Date()
-            if UIApplication.shared.applicationState == .active, cameraPrompt == nil, online,
+            if UIApplication.shared.applicationState == .active, cameraPrompt == nil, !companionBusy, online,
                let snapshot = camera.snapshotJPEG(orientation: UIDevice.current.orientation) {
                 let (jpeg, capturedAt) = snapshot
                 let fixAtCapture = lastFix
                 do {
                     let started = Date()
                     let result = try await backend.detectHazard(jpeg: jpeg)
+                    guard !Task.isCancelled, phase == .active, cameraRunning, UIApplication.shared.applicationState == .active else { return }
                     let latency = Date().timeIntervalSince(started)
                     detectorLatencies.append(latency)
                     if detectorLatencies.count > 200 { detectorLatencies.removeFirst() }
@@ -319,35 +409,39 @@ final class AppModel: ObservableObject {
                     lastDetection = result.hazard
                         ? String(format: "%@ · %@ · %.0f%%%@", result.label.isEmpty ? result.kind : result.label, result.side,
                                  result.confidence * 100, result.blocks_road ? " · may block road" : "")
-                        : "Clear"
+                        : "No hazard flagged in this frame"
                     let observation = (result.hazard && kind != nil)
                         ? DetectionFilter.Observation(kind: kind!, side: HazardSide(rawValue: result.side) ?? .unknown,
                                                       blocksRoad: result.blocks_road, confidence: result.confidence, at: capturedAt)
                         : nil
+                    filter.window = fastDemoChecks ? 12 : 5
                     if let accepted = filter.add(observation, now: Date()) {
                         askDriver(about: accepted, label: result.label, capturedAt: capturedAt, fix: fixAtCapture)
                     }
                 } catch {
+                    guard !Task.isCancelled, phase == .active, cameraRunning else { return }
                     consecutiveErrors += 1
                     detectorStatus = "Hazard checker unavailable: \(error.localizedDescription)"
                     if consecutiveErrors == 1 { note("Hazard checker error: \(error.localizedDescription)") }
                 }
             }
-            // About one frame per second, one request in flight; back off on errors.
-            let target: TimeInterval = consecutiveErrors > 0 ? min(10, Double(consecutiveErrors) * 2) : 1.0
-            let remaining = target - Date().timeIntervalSince(cycleStart)
-            if remaining > 0 { try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) }
+            // Conservative free-tier cadence; account quotas still apply. One request in flight.
+            let quotaLimited = detectorStatus.contains("429") || detectorStatus.localizedCaseInsensitiveContains("too many")
+            let target: TimeInterval = consecutiveErrors > 0 ? (quotaLimited ? 60 : min(12, Double(consecutiveErrors) * 3)) : (fastDemoChecks ? 3 : 15)
+            nextCameraCheck = cycleStart.addingTimeInterval(target)
+            while !Task.isCancelled, Date() < nextCameraCheck {
+                if checkNowRequested, !quotaLimited { checkNowRequested = false; break }
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
         }
     }
 
-    private func askDriver(about observation: DetectionFilter.Observation, label: String, capturedAt: Date, fix: ReceiverFix?) {
+    private func askDriver(about observation: DetectionFilter.Observation, label: String, capturedAt: Date, fix: ReceiverFix?, description: String? = nil) {
         var hazardLocation: HazardLocation?
-        if let fix, Date().timeIntervalSince(fix.timestamp) < 10, fix.accuracyMeters <= 50 {
-            // The object is a little ahead of the camera; place it ~25 m along our course.
-            var lat = fix.latitude, lon = fix.longitude
-            if let course = fix.courseDegrees {
-                (lat, lon) = TestEvents.offset(latitude: lat, longitude: lon, meters: 25, bearingDegrees: course)
-            }
+        let matchedFix = location.fix(near: capturedAt) ?? fix
+        if let fix = matchedFix, abs(capturedAt.timeIntervalSince(fix.timestamp)) <= 3, fix.accuracyMeters >= 0, fix.accuracyMeters <= 40 {
+            // Approximate observation position: monocular classification cannot measure object depth.
+            let lat = fix.latitude, lon = fix.longitude
             hazardLocation = HazardLocation(latitude: lat, longitude: lon, accuracyMeters: max(fix.accuracyMeters, 10),
                                             headingDegrees: fix.courseDegrees)
         }
@@ -356,14 +450,21 @@ final class AppModel: ObservableObject {
                                     location: hazardLocation, phase: .asking)
         note(String(format: "Camera flagged possible %@ (%@, %.0f%%)%@", observation.kind.rawValue, observation.side.rawValue,
                     observation.confidence * 100, hazardLocation == nil ? " · no GPS fix" : ""))
-        let text = AlertPhrases.cameraPrompt(kind: observation.kind, side: observation.side,
+        let text = (description.map { $0 + " " } ?? "") + AlertPhrases.cameraPrompt(kind: observation.kind, side: observation.side,
                                              blocksRoad: observation.blocksRoad, persona: persona)
-        guard !muted else { cameraPrompt?.phase = .listening; listenForAnswer(); return }
+        let promptID = cameraPrompt?.id
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 45_000_000_000)
+            guard !Task.isCancelled, let self, self.cameraPrompt?.id == promptID, self.cameraPrompt?.phase != .sending else { return }
+            self.cancelCameraReport()
+        }
+        guard !muted else { cameraPrompt?.phase = .done("Muted — tap Report or Cancel"); return }
         speech.speak(text) { [weak self] outcome in
-            guard let self else { return }
+            guard let self, self.phase == .active, self.cameraPrompt?.id == promptID else { return }
+            self.companionSpoken(outcome)
             switch outcome {
             case .finished: self.listenForAnswer()
-            case .failed: self.listenForAnswer()
+            case .failed: self.cameraPrompt?.phase = .done("Voice interrupted — tap Report or Cancel")
             case .started: break
             }
         }
@@ -372,8 +473,9 @@ final class AppModel: ObservableObject {
     private func listenForAnswer() {
         guard cameraPrompt?.phase == .asking || cameraPrompt?.phase == .listening else { return }
         cameraPrompt?.phase = .listening
+        let promptID = cameraPrompt?.id
         speech.listen(seconds: 7) { [weak self] intent, transcript in
-            guard let self, self.cameraPrompt != nil else { return }
+            guard let self, self.phase == .active, self.cameraPrompt?.id == promptID else { return }
             self.cameraPrompt?.transcript = transcript
             switch intent {
             case .confirm: self.confirmCameraReport()
@@ -383,7 +485,7 @@ final class AppModel: ObservableObject {
                 self.cameraPrompt?.phase = .done("No answer heard — tap Report or Cancel")
                 Task { [weak self] in
                     try? await Task.sleep(nanoseconds: 15_000_000_000)
-                    if case .done = self?.cameraPrompt?.phase { self?.cameraPrompt = nil }
+                    if self?.cameraPrompt?.id == promptID, case .done = self?.cameraPrompt?.phase { self?.cameraPrompt = nil }
                 }
             }
         }
@@ -395,37 +497,44 @@ final class AppModel: ObservableObject {
             cameraPrompt = nil
             return
         }
-        guard let hazardLocation = prompt.location else {
-            cameraPrompt?.phase = .done("No GPS position — not sent")
-            speech.speak("I don't have your position, so I can't share it.") { _ in }
-            return
-        }
-        guard shareLocation else {
-            cameraPrompt?.phase = .done("Turn on location sharing in Settings first")
-            speech.speak("Location sharing is off, so I can't share it. You can turn it on in settings.") { _ in }
+        guard phase == .active, prompt.phase != .sending else { return }
+        guard Date().timeIntervalSince(prompt.capturedAt) <= 60 else { cameraPrompt?.phase = .done("Observation expired — check again"); return }
+        speech.cancelListening()
+        let hazardLocation = prompt.location
+        guard demoDelivery || hazardLocation != nil else {
+            cameraPrompt?.phase = .done("No accurate GPS at capture — move outdoors and check again")
+            speech.speak("Location is allowed, but I didn't get an accurate GPS position when I saw this. Move outdoors and check again.") { _ in }
             return
         }
         cameraPrompt?.phase = .sending
         Task {
             do {
-                try await backend.report(kind: prompt.kind, convoyID: convoyID, clientEventID: UUID(),
+                // Explicit confirmation shares the observed hazard position with the convoy.
+                try await backend.setLocationConsent(true)
+                guard phase == .active, cameraPrompt?.id == prompt.id else { return }
+                shareLocation = true
+                UserDefaults.standard.set(true, forKey: "shareLocation")
+                try await backend.report(kind: prompt.kind, convoyID: convoyID, clientEventID: prompt.id,
                                          observedAt: prompt.capturedAt, location: hazardLocation,
-                                         source: .driverConfirmedCamera, side: prompt.side, blocksRoad: prompt.blocksRoad)
+                                         source: hazardLocation == nil ? .convoyMember : .driverConfirmedCamera, side: prompt.side, blocksRoad: prompt.blocksRoad)
+                guard phase == .active, cameraPrompt?.id == prompt.id else { return }
                 note("Camera report sent · \(prompt.kind.rawValue) · \(prompt.side.rawValue)\(prompt.blocksRoad ? " · possible blockage" : "")")
                 cameraPrompt?.phase = .done("Sent to your convoy")
                 speech.speak(AlertPhrases.reportSent(blocksRoad: prompt.blocksRoad)) { _ in }
             } catch {
+                guard phase == .active, cameraPrompt?.id == prompt.id else { return }
                 note("Camera report failed: \(error.localizedDescription)")
                 cameraPrompt?.phase = .done("Not sent: \(error.localizedDescription)")
                 speech.speak(AlertPhrases.reportFailed) { _ in }
             }
             try? await Task.sleep(nanoseconds: 4_000_000_000)
-            cameraPrompt = nil
+            if cameraPrompt?.id == prompt.id { cameraPrompt = nil }
         }
     }
 
     func cancelCameraReport(spoken: Bool = false) {
         guard cameraPrompt != nil else { return }
+        speech.cancelListening()
         note("Camera report cancelled")
         cameraPrompt = nil
         if spoken { speech.speak(AlertPhrases.reportCancelled) { _ in } }
@@ -471,10 +580,39 @@ final class AppModel: ObservableObject {
 
     private func handle(_ event: HazardEvent, via path: String) {
         let receivedAt = Date()
+        if demoDelivery, path == "feed" {
+            guard phase == .active, event.reporterID != backend.userID,
+                  event.expiresAt > receivedAt,
+                  event.createdAt >= (driveStartedAt ?? receivedAt).addingTimeInterval(-2),
+                  !demoDelivered.contains(event.id) else { return }
+            demoDelivered.insert(event.id)
+            let label = AlertPhrases.label(event.kind).lowercased()
+            let side = event.side == .unknown ? "" : " on the \(event.side.rawValue)"
+            let message = "A convoy member reported \(label)\(side)\(event.blocksRoad ? "; possible road blockage" : "")."
+            incomingHazard = IncomingHazard(id: event.id, title: "Demo · reported \(label)", message: message, blocksRoad: false)
+            if !muted { speech.speak(message) { _ in } }
+            if UIApplication.shared.applicationState != .active {
+                notifications.postAlert(title: "Pudle demo · \(label)", body: message, withSound: muted, blockage: false)
+            }
+            deliveries.insert(DeliveryRecord(eventID: event.id, kind: event.kind, source: event.source,
+                receivedAt: receivedAt, appState: Self.appStateDescription(), outcome: .notified,
+                note: "Demo popup delivered · GPS/direction bypassed"), at: 0)
+            trimLogs()
+            return
+        }
         let decision = policy.decide(event, receiver: lastFix, now: receivedAt)
         let state = Self.appStateDescription()
         switch decision {
         case .speak(let phrase, let relevance):
+            let title: String
+            if event.source == .labeledTest {
+                title = "Pudle test alert"
+            } else if case .ahead = relevance {
+                title = event.blocksRoad ? "Possible road blockage ahead" : "Reported \(AlertPhrases.label(event.kind).lowercased()) ahead"
+            } else {
+                title = "Convoy hazard report"
+            }
+            incomingHazard = IncomingHazard(id: event.id, title: title, message: phrase, blocksRoad: event.blocksRoad)
             let record = DeliveryRecord(eventID: event.id, kind: event.kind, source: event.source, receivedAt: receivedAt,
                                         appState: state, outcome: .spoken,
                                         note: "\(path) · \(Self.describe(relevance)) · route \(speech.currentRoute)")
@@ -504,7 +642,7 @@ final class AppModel: ObservableObject {
                 }
             }
             if UIApplication.shared.applicationState != .active || event.blocksRoad {
-                notifications.postAlert(title: event.blocksRoad ? "Possible road blockage ahead" :
+                notifications.postAlert(title: event.blocksRoad ? "Possible road blockage reported" :
                                             (event.source == .labeledTest ? "Pudle test alert" : "Pudle report"),
                                         body: event.blocksRoad ? phrase + " Tap to reroute in Google Maps." : phrase,
                                         withSound: false, blockage: event.blocksRoad)
@@ -543,6 +681,7 @@ final class AppModel: ObservableObject {
 
     /// Opens Google Maps with the reviewed detour. Called from the in-app button or the notification.
     func reroute() {
+        guard let detour else { lastError = "Choose and review a detour waypoint first."; return }
         guard let destination else {
             lastError = "Set a destination (and detour) in Settings → Demo route first."
             return
@@ -601,7 +740,7 @@ final class AppModel: ObservableObject {
     private func refreshCorridor(convoyID: String) async {
         if let last = lastCorridorFetch, Date().timeIntervalSince(last) < 60, corridor != nil { return }
         lastCorridorFetch = Date()
-        if let fetched = try? await backend.fetchCorridor(convoyID: convoyID), fetched != corridor {
+        if let fetched = try? await backend.fetchCorridor(convoyID: convoyID), selectedConvoyID == convoyID, phase == .active, fetched != corridor {
             corridor = fetched
             policy.corridor = fetched
             note(String(format: "Using demo road '%@' (%.1f km)", fetched.name, fetched.lengthMeters / 1000))
@@ -625,6 +764,10 @@ final class AppModel: ObservableObject {
 
     /// Returns true when the feed is healthy (or nothing to poll).
     private func pollOnce() async -> Bool {
+        guard !polling else { return true }
+        polling = true
+        lastPollStarted = Date()
+        defer { polling = false }
         guard phase == .active, backend.isConfigured, backend.session != nil, let convoyID = selectedConvoyID else {
             refreshFeedState()
             return true
@@ -637,7 +780,7 @@ final class AppModel: ObservableObject {
         do {
             await refreshCorridor(convoyID: convoyID)
             let result = try await backend.fetchEvents(convoyID: convoyID, now: Date())
-            guard phase == .active else { return true }
+            guard phase == .active, selectedConvoyID == convoyID, backend.session != nil, !Task.isCancelled else { return true }
             setFeed(.live(lastSuccess: Date()))
             for event in result.events { handle(event, via: "feed") }
             return true
@@ -683,6 +826,9 @@ final class AppModel: ObservableObject {
     // MARK: Account
 
     func signIn(email: String, password: String) async {
+        guard !accountBusy else { return }
+        accountBusy = true
+        defer { accountBusy = false }
         do {
             try await backend.signIn(email: email, password: password)
             await afterSignIn(fallbackEmail: email)
@@ -693,6 +839,9 @@ final class AppModel: ObservableObject {
     }
 
     func signUp(email: String, password: String) async {
+        guard !accountBusy else { return }
+        accountBusy = true
+        defer { accountBusy = false }
         do {
             try await backend.signUp(email: email, password: password)
             await afterSignIn(fallbackEmail: email)
@@ -764,7 +913,7 @@ final class AppModel: ObservableObject {
     func sendReport(kind: HazardKind, side: HazardSide = .unknown, blocksRoad: Bool = false) async -> Bool {
         guard let convoyID = selectedConvoyID else { lastError = "Choose a convoy first."; return false }
         var attached: HazardLocation?
-        if shareLocation, let fix = lastFix, Date().timeIntervalSince(fix.timestamp) < 15, fix.accuracyMeters <= 50 {
+        if shareLocation, let fix = lastFix, Date().timeIntervalSince(fix.timestamp) < 15, fix.accuracyMeters <= 40 {
             attached = HazardLocation(latitude: fix.latitude, longitude: fix.longitude, accuracyMeters: max(fix.accuracyMeters, 5),
                                       headingDegrees: fix.courseDegrees)
         }

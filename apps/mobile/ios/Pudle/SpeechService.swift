@@ -17,9 +17,9 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerD
     /// Fetches cloud audio for a phrase; nil disables cloud voices.
     var cloudVoice: ((String, Persona) async throws -> Data)?
     var persona: Persona = .copilot
-    var useCloudVoice = true
+    var useCloudVoice = false
     /// Longest Pudle waits for a cloud voice before falling back to the on-device voice.
-    var cloudTimeout: TimeInterval = 2.5
+    var cloudTimeout: TimeInterval = 10
 
     private let synthesizer = AVSpeechSynthesizer()
     private var player: AVAudioPlayer?
@@ -36,6 +36,7 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerD
     private var recognitionTask: SFSpeechRecognitionTask?
     private var listenTimer: Task<Void, Never>?
     private var listenCompletion: ((VoiceIntent, String) -> Void)?
+    private var listeningID: UUID?
     private var lastTranscript = ""
     private var tapInstalled = false
 
@@ -60,6 +61,7 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerD
     func speak(_ text: String, cloud: Bool = true, completion: @escaping (Outcome) -> Void) {
         generation += 1
         let myGeneration = generation
+        stopListening(deliver: false)
         stopPlayback()
         guard activatePlayback() else {
             completion(.failed("Audio session unavailable"))
@@ -97,7 +99,7 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerD
 
     private func speakOnDevice(_ text: String, completion: @escaping (Outcome) -> Void) {
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.voice = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == "en-US" }.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: "en-US")
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.04
         utterance.prefersAssistiveTechnologySettings = false
         callbacks[ObjectIdentifier(utterance)] = completion
@@ -187,7 +189,11 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerD
     /// Listens up to `seconds` for "report it" / "cancel". Calls back once with the intent
     /// (or .unknown on silence/timeout/error) and the transcript (shown on screen, never stored).
     func listen(seconds: TimeInterval, completion: @escaping (VoiceIntent, String) -> Void) {
+        generation += 1
+        stopPlayback()
         stopListening(deliver: false)
+        let myListeningID = UUID()
+        listeningID = myListeningID
         guard let recognizer, recognizer.isAvailable else {
             completion(.unknown, "")
             return
@@ -204,7 +210,7 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerD
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
-        request.contextualStrings = ["report it", "cancel", "go ahead", "yes", "no"]
+        request.contextualStrings = ["what do you see", "what is in front of me", "report it", "cancel", "go ahead", "yes", "no"]
         recognitionRequest = request
         lastTranscript = ""
         listenCompletion = completion
@@ -231,9 +237,9 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerD
             let text = result?.bestTranscription.formattedString ?? ""
             let isFinal = result?.isFinal ?? false
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.listeningID == myListeningID else { return }
                 if !text.isEmpty { self.lastTranscript = text }
-                if VoiceIntent.parse(text) != .unknown || isFinal || error != nil {
+                if isFinal || error != nil {
                     self.stopListening(deliver: true)
                 }
             }
@@ -245,7 +251,10 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerD
         }
     }
 
+    func cancelListening() { stopListening(deliver: false) }
+
     private func stopListening(deliver: Bool) {
+        listeningID = nil
         listenTimer?.cancel()
         listenTimer = nil
         if audioEngine.isRunning { audioEngine.stop() }

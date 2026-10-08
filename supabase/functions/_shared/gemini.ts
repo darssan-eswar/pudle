@@ -21,14 +21,14 @@ export async function interact(body: Record<string, unknown>, timeoutMs: number)
   try {
     const response = await fetch(ENDPOINT, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": geminiKey() },
-      body: JSON.stringify(body),
+      headers: { "content-type": "application/json", "cache-control": "no-store", "x-goog-api-key": geminiKey() },
+      body: JSON.stringify({ ...body, store: false }),
       signal: controller.signal,
     });
     const text = await response.text();
     if (!response.ok) {
       // Log status only; responses may echo request content.
-      console.error("gemini_error", response.status, text.slice(0, 300));
+      console.error("gemini_error", response.status);
       throw new GeminiError(`Gemini request failed (${response.status}).`, response.status === 429 ? 429 : 502);
     }
     return JSON.parse(text);
@@ -72,19 +72,23 @@ export const cors = {
 };
 
 export function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...cors, "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { ...cors, "content-type": "application/json", "cache-control": "no-store" } });
 }
 
-/** Subject of the (gateway-verified) JWT, used only for per-user rate limiting. */
-export function userId(req: Request): string | null {
-  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!token) return null;
+/** Validate the user's bearer token against Supabase Auth, rather than trusting decoded claims. */
+export async function userId(req: Request): Promise<string | null> {
+  const authorization = req.headers.get("authorization");
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!authorization?.match(/^Bearer\s+\S+$/i) || !url || !key) return null;
   try {
-    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-    return payload.role === "authenticated" && typeof payload.sub === "string" ? payload.sub : null;
-  } catch {
-    return null;
-  }
+    const response = await fetch(`${url}/auth/v1/user`, {
+      headers: { authorization, apikey: key }, signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) return null;
+    const user = await response.json();
+    return typeof user.id === "string" ? user.id : null;
+  } catch { return null; }
 }
 
 const buckets = new Map<string, number[]>();

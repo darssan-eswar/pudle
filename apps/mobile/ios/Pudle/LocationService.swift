@@ -63,6 +63,12 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         isUpdating = true
     }
 
+    /// Match fixes delivered before or after the frame, without substituting a later car position.
+    func fix(near capturedAt: Date) -> ReceiverFix? {
+        recent.filter { abs($0.timestamp.timeIntervalSince(capturedAt)) <= 3 && $0.accuracyMeters > 0 && $0.accuracyMeters <= 40 }
+            .min { abs($0.timestamp.timeIntervalSince(capturedAt)) < abs($1.timestamp.timeIntervalSince(capturedAt)) }
+    }
+
     func stop() {
         manager.stopUpdatingLocation()
         manager.allowsBackgroundLocationUpdates = false
@@ -107,6 +113,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     }
 
     private func ingest(_ fixes: [ReceiverFix]) {
+        guard isUpdating else { return }
         for var fix in fixes where fix.accuracyMeters > 0 {
             recent.append(fix)
             recent.removeAll { fix.timestamp.timeIntervalSince($0.timestamp) > 30 }

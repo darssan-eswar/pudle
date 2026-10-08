@@ -99,6 +99,19 @@ final class RoadRelevanceTests: XCTestCase {
         RoadRelevance.evaluate(hazard: h, receiver: f, now: now)
     }
 
+    func testInvalidAndFutureReceiverPositionIsHeld() {
+        var receiver = fix()
+        receiver.latitude = .nan
+        XCTAssertEqual(eval(hazard(meters: 800, bearing: 0), receiver), .receiverUnknown("invalid position"))
+        receiver = fix()
+        receiver.timestamp = now + 60
+        XCTAssertEqual(eval(hazard(meters: 800, bearing: 0), receiver), .receiverUnknown("invalid position"))
+    }
+
+    func testBeyondOneMileIsNotAhead() {
+        XCTAssertEqual(eval(hazard(meters: 1700, bearing: 0), fix()), .notRelevant("far"))
+    }
+
     func testNoHazardPositionIsUnlocated() {
         XCTAssertEqual(eval(nil, fix()), .unlocated)
     }
@@ -207,6 +220,10 @@ final class PhraseTests: XCTestCase {
     }
 
     func testVoiceIntent() {
+        XCTAssertEqual(VoiceIntent.parse("report it but actually do not"), .cancel)
+        XCTAssertEqual(VoiceIntent.parse("I am not sure please"), .cancel)
+        XCTAssertEqual(VoiceIntent.parse("should I report it"), .unknown)
+        XCTAssertEqual(VoiceIntent.parse("please"), .unknown)
         XCTAssertEqual(VoiceIntent.parse("Oh shoot, go ahead and report it"), .confirm)
         XCTAssertEqual(VoiceIntent.parse("Yeah"), .confirm)
         XCTAssertEqual(VoiceIntent.parse("yep do it"), .confirm)
@@ -433,6 +450,12 @@ final class CorridorTests: XCTestCase {
         guard case .ahead = eval(hazardAt(2_000), receiver(at: 500, course: 0)) else { return XCTFail() }
     }
 
+    func testOppositeReporterOnRecordedRoadIsSuppressed() {
+        var report = hazardAt(1_200)
+        report.headingDegrees = 180
+        XCTAssertEqual(eval(report, receiver(at: 600, course: 0)), .notRelevant("report direction differs from road"))
+    }
+
     func testOppositeDirectionOnSameRoad() {
         XCTAssertEqual(eval(hazardAt(1_200), receiver(at: 600, course: 180)), .notRelevant("opposite direction"))
     }
@@ -485,5 +508,19 @@ final class DetectionFilterTests: XCTestCase {
     func testSingleVeryConfidentFrame() {
         var f = DetectionFilter()
         XCTAssertEqual(f.add(O(kind: .animal, side: .center, blocksRoad: false, confidence: 0.9, at: now), now: now)?.kind, .animal)
+    }
+}
+
+final class CompanionCommandTests: XCTestCase {
+    func testSceneRequests() {
+        XCTAssertEqual(CompanionCommand.parse("Hey Pudle, what do you see?"), .describe)
+        XCTAssertEqual(CompanionCommand.parse("What's in front of me?"), .describe)
+        XCTAssertEqual(CompanionCommand.parse("Describe the scene"), .describe)
+    }
+    func testReportRequiresAffirmation() {
+        XCTAssertEqual(CompanionCommand.parse("Go ahead and report it"), .report)
+        XCTAssertEqual(CompanionCommand.parse("Should I report it?"), .unknown)
+        XCTAssertEqual(CompanionCommand.parse("Don't report it"), .cancel)
+        XCTAssertEqual(CompanionCommand.parse("cancel"), .cancel)
     }
 }

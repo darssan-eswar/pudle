@@ -8,7 +8,7 @@ struct SavedPlace: Codable, Equatable {
     var latitude: Double
     var longitude: Double
 
-    var coordinateString: String { String(format: "%.6f,%.6f", latitude, longitude) }
+    var coordinateString: String { String(format: "%.6f,%.6f", locale: Locale(identifier: "en_US_POSIX"), latitude, longitude) }
 }
 
 /// Hands directions to Google Maps. iOS does not let one app change another app's active route,
@@ -31,12 +31,6 @@ enum DetourService {
 
     /// Directions URL. Prefers the Google Maps app scheme; falls back to the universal link.
     static func directionsURL(destination: SavedPlace, via waypoint: SavedPlace?) -> URL? {
-        if UIApplication.shared.canOpenURL(URL(string: "comgooglemaps://")!) {
-            // Google Maps iOS scheme: "daddr=A+to:B" routes through A then to B.
-            var daddr = destination.coordinateString
-            if let waypoint { daddr = waypoint.coordinateString + "+to:" + destination.coordinateString }
-            return URL(string: "comgooglemaps://?daddr=\(daddr)&directionsmode=driving")
-        }
         var components = URLComponents(string: "https://www.google.com/maps/dir/")!
         components.queryItems = [
             URLQueryItem(name: "api", value: "1"),

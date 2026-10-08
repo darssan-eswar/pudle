@@ -1,9 +1,10 @@
+/// <reference lib="deno.ns" />
 // POST { text: string (<= 300 chars), persona: "copilot" | "buddy" | "pro" | "hype" }
 // -> audio/wav (24 kHz mono 16-bit). The text is the app's fixed alert phrase; the server only
 // chooses the voice and delivery style. Nothing is stored.
 import { allow, cors, GeminiError, interact, json, outputBlocks, userId } from "../_shared/gemini.ts";
 
-const MODEL = Deno.env.get("GEMINI_TTS_MODEL") ?? "gemini-3.8-flash-tts";
+const MODEL = Deno.env.get("GEMINI_TTS_MODEL") ?? "gemini-3.8-flash-lite-tts";
 
 const PERSONAS: Record<string, { voice: string; style: string }> = {
   copilot: { voice: "Kore", style: "calm, clear and reassuring, like a steady co-pilot; brisk pace" },
@@ -15,7 +16,7 @@ const PERSONAS: Record<string, { voice: string; style: string }> = {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
-  const user = userId(req);
+  const user = await userId(req);
   if (!user) return json({ error: "Sign in required" }, 401);
   if (!allow(`speak:${user}`, 40, 60_000)) return json({ error: "Too many requests" }, 429);
 
@@ -28,7 +29,7 @@ Deno.serve(async (req) => {
   } catch {
     return json({ error: "Invalid JSON" }, 400);
   }
-  if (!text || text.length > 300) return json({ error: "text must be 1-300 characters" }, 400);
+  if (!text || text.length > 600) return json({ error: "text must be 1-600 characters" }, 400);
   const chosen = PERSONAS[persona] ?? PERSONAS.copilot;
 
   try {
@@ -38,10 +39,10 @@ Deno.serve(async (req) => {
         type: "user_input",
         content: [{ type: "text", text, annotations: [{ type: "speech_metadata", style: chosen.style }] }],
       }],
-      response_format: { type: "audio", mime_type: "audio/wav", sample_rate: 24000 },
+      response_format: { type: "audio" },
       generation_config: { speech_config: [{ voice: chosen.voice }] },
     }, 10_000);
-    const audio = outputBlocks(result, "audio").pop()?.data;
+    const audio = result?.output_audio?.data ?? outputBlocks(result, "audio").pop()?.data;
     if (typeof audio !== "string") throw new GeminiError("Gemini returned no audio.");
     const bytes = Uint8Array.from(atob(audio), (c) => c.charCodeAt(0));
     return new Response(bytes, { headers: { ...cors, "content-type": "audio/wav", "cache-control": "no-store" } });

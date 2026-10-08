@@ -45,8 +45,8 @@ public struct RelevanceRules: Sendable {
     /// Below this speed, `courseDegrees` must come from recent fixes (the app derives it).
     public var minSpeedForCourse: Double = 1.0            // ~2 mph: slow demo driving still counts
     public var nearbyRadius: Double = 500
-    /// "Within about a mile": warn up to 1.25 miles ahead along the road.
-    public var aheadMaxDistance: Double = 2_000
+    /// "Within about a mile": warn up to one mile ahead along the road.
+    public var aheadMaxDistance: Double = 1_609.344
     public var aheadMaxBearingOffset: Double = 25
     public var maxHeadingDifference: Double = 45
     public var maxCrossTrack: Double = 30
@@ -64,7 +64,8 @@ public enum Geo {
     public static func distance(lat1: Double, lon1: Double, lat2: Double, lon2: Double) -> Double {
         let p1 = lat1 * .pi / 180, p2 = lat2 * .pi / 180
         let dp = (lat2 - lat1) * .pi / 180, dl = (lon2 - lon1) * .pi / 180
-        let a = sin(dp / 2) * sin(dp / 2) + cos(p1) * cos(p2) * sin(dl / 2) * sin(dl / 2)
+        let rawA = sin(dp / 2) * sin(dp / 2) + cos(p1) * cos(p2) * sin(dl / 2) * sin(dl / 2)
+        let a = max(0, min(1, rawA))
         return 2 * earthRadius * atan2(sqrt(a), sqrt(1 - a))
     }
 
@@ -156,6 +157,7 @@ public enum RoadRelevance {
                                 rules: RelevanceRules = RelevanceRules()) -> Relevance {
         guard let hazard, hazard.isValid else { return .unlocated }
         guard let receiver else { return .receiverUnknown("no position") }
+        guard receiver.latitude.isFinite, receiver.longitude.isFinite, (-90...90).contains(receiver.latitude), (-180...180).contains(receiver.longitude), receiver.accuracyMeters.isFinite, receiver.timestamp.timeIntervalSince(now) <= 5 else { return .receiverUnknown("invalid position") }
         if now.timeIntervalSince(receiver.timestamp) > rules.maxFixAge { return .receiverUnknown("stale position") }
         if receiver.accuracyMeters <= 0 || receiver.accuracyMeters > rules.maxReceiverAccuracy {
             return .receiverUnknown("low accuracy")
@@ -173,6 +175,8 @@ public enum RoadRelevance {
             let hazardOnRoad = h.offsetMeters <= rules.corridorHalfWidth + hazard.accuracyMeters
             let receiverOnRoad = r.offsetMeters <= rules.corridorHalfWidth + receiver.accuracyMeters
             if hazardOnRoad && receiverOnRoad {
+                guard hazard.accuracyMeters <= rules.maxHazardAccuracyForAhead else { return .notRelevant("report position uncertain") }
+                if let heading = hazard.headingDegrees, Geo.angleDifference(heading, h.bearingDegrees) > rules.corridorMaxHeadingDifference { return .notRelevant("report direction differs from road") }
                 guard moving, let course else {
                     return distance <= rules.nearbyRadius
                         ? .nearbyDirectionUnverified(distanceMeters: distance)
@@ -192,7 +196,7 @@ public enum RoadRelevance {
                 // The hazard is on the recorded road but we are not: likely a parallel or crossing street.
                 return distance <= 150 ? .nearbyDirectionUnverified(distanceMeters: distance) : .notRelevant("off the recorded road")
             }
-            // Hazard not on this corridor: fall through to heading rules.
+            return .notRelevant("outside selected recorded road")
         }
 
         // 2. No usable corridor: bearing and heading heuristics. Cannot exclude parallel roads

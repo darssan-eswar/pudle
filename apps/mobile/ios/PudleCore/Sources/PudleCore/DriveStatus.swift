@@ -75,7 +75,7 @@ public enum DriveStatusText {
             return StatusLine(title: "Drive active · Connecting", detail: "Waiting for the report feed.", tone: .warning)
         case .live:
             return StatusLine(title: "Drive active · Listening",
-                              detail: "Convoy reports will be spoken, including while another app is open.", tone: .good)
+                              detail: "Convoy feed connected. Background alerts depend on iOS location updates and network availability.", tone: .good)
         }
     }
 
