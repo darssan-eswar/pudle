@@ -59,7 +59,28 @@ Demo mode presents new reports from the other convoy member without waiting for 
 
 A possible blockage can offer a reviewed detour. With a saved destination and detour waypoint, Pudle opens Google Maps to plan that route. Pudle cannot silently change an already-running Google Maps route. Camera capture requires Pudle in the foreground; background camera capture is not supported on iPhone.
 
+## Start here
+
+- **Review the demo:** [landing page](https://pudle-demo.vercel.app) and [recording](https://www.youtube.com/shorts/8gv9OXGDTJA).
+- **Review the iPhone product:** [native app and setup](apps/mobile/ios/README.md).
+- **Review the website:** [Vercel web app](deploy/vercel/README.md).
+- **Review the backend:** [Supabase overview](supabase/README.md).
+- **Browse supporting work:** [documentation](docs/README.md), [research](research/README.md), and [earlier browser prototype](prototypes/browser/README.md).
+
 ## Project structure
+
+```text
+pudle/
+├── apps/mobile/ios/      # Current native iPhone app + Swift core tests
+├── apps/mobile/expo-go/  # Earlier Expo demo
+├── deploy/vercel/        # Live landing page + web convoy app
+├── supabase/             # Shared backend, Edge Functions + migrations
+├── docs/                 # Guides and implementation notes
+├── research/             # Experiments, evaluation plans + roadmap
+├── prototypes/browser/   # Earlier browser application, kept separate
+├── .github/              # Automation + Copilot configuration
+└── README.md             # Product and implementation overview
+```
 
 | Directory | Purpose |
 |---|---|
@@ -69,7 +90,8 @@ A possible blockage can offer a reviewed detour. With a saved destination and de
 | `supabase/migrations/` | Convoys, consent, hazard events, access policies and optional cleanup |
 | `deploy/vercel/` | Next.js demo landing with screenshots/video and a separate web convoy app |
 | `apps/mobile/expo-go/` | Earlier foreground Expo demo |
-| `src/`, `research/` | Earlier Sites/Cloudflare prototype and local-model experiments |
+| `prototypes/browser/` | Earlier browser/Sites application, its tests, scripts and configs |
+| `research/` | Local-model research and benchmarks |
 
 The web app and earlier research prototype are separate from the native iPhone camera implementation. See their own setup notes before using them.
 

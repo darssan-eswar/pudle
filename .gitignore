@@ -51,3 +51,13 @@ apps/mobile/ios/Pudle/Info.plist
 
 # Supabase CLI local cache
 supabase/.temp/
+
+# Earlier browser prototype: generated and local-only files
+prototypes/browser/node_modules/
+prototypes/browser/.next/
+prototypes/browser/.vinext/
+prototypes/browser/dist/
+prototypes/browser/next-env.d.ts
+prototypes/browser/.wrangler/
+prototypes/browser/.pudle-local/
+prototypes/browser/.cache/

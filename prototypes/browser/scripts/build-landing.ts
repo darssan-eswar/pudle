@@ -7,7 +7,7 @@ import LandingPage from '../src/app/page';
 
 // Reuse the product pitch; never export authenticated HTML or app data.
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const output = join(root, 'deploy/vercel/public');
+const output = join(root, '../../deploy/vercel/public');
 const cssDirectory = join(root, 'dist/client/_next/static/css');
 const cssFiles = (await readdir(cssDirectory)).filter((name) => name.startsWith('index.') && name.endsWith('.css'));
 if (cssFiles.length !== 1) throw new Error('Run the production build first; expected one global stylesheet.');

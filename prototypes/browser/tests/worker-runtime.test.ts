@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { pinOnnxWasmUrls, workerSafeImportQuery } from '../scripts/worker-runtime';
-import lockfile from '../package-lock.json';
+import lockfile from '../../../package-lock.json';
 
 test('ONNX fallback WASM URLs use the exact locked runtime without copying a giant asset', () => {
   const source = 'new URL("ort-wasm-simd-threaded.asyncify.wasm",import.meta.url)';

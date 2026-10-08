@@ -1,3 +1,5 @@
+> Scope: the browser-specific instructions below describe `prototypes/browser/`, the earlier application. Its `src/`, `scripts/`, `tests/`, `public/` and config paths are relative to that folder. For the current native iPhone app and live Vercel website, start with the root README and their respective setup guides. Root npm commands delegate to the browser prototype for backward-compatible CI.
+
 # Pudle Copilot instructions
 
 Pudle is a phone dashcam with local recordings, nearby reports, private ride messages, and the Pudy voice companion. Preserve these rules in every change:

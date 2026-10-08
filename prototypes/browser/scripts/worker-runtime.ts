@@ -1,5 +1,5 @@
 import type { Plugin } from 'vite';
-import lockfile from '../package-lock.json';
+import lockfile from '../../../package-lock.json';
 
 const onnxVersion = lockfile.packages['node_modules/onnxruntime-web'].version;
 
