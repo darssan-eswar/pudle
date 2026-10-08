@@ -1,5 +1,7 @@
 # Pudle — your road companion
 
+> Built for a GitHub Copilot contest using GitHub Education’s Copilot access. This repository documents the MVP developed for the submission.
+
 Pudle is an iPhone prototype that turns a possible road hazard seen by one phone into a driver-confirmed report for a private convoy. Google Gemini interprets camera frames and generates natural voice audio; the driver decides whether to share the observation. Another phone receives a visible alert and can speak the report aloud.
 
 [Live demo landing page](https://pudle-demo.vercel.app) · [Watch the demo](https://www.youtube.com/shorts/8gv9OXGDTJA) · [Web convoy app](https://pudle-demo.vercel.app/app) · [Native iPhone setup](apps/mobile/ios/README.md)
